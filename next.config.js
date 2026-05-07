@@ -69,9 +69,6 @@ const nextConfig = {
     NEXT_PUBLIC_APP_NAME: 'Della Pace - Pizzeria Artigianale',
   },
 
-  // SWC minification (padrão, mais rápido)
-  swcMinify: true,
-
   // Production source maps
   productionBrowserSourceMaps: false,
 
@@ -83,9 +80,6 @@ const nextConfig = {
 
   // Trailing slash
   trailingSlash: false,
-
-  // HTTPS redirect
-  redirectHttpToHttps: process.env.NODE_ENV === 'production',
 }
 
 module.exports = nextConfig
