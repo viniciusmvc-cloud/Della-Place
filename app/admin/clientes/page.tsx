@@ -1,19 +1,23 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { loadCustomers, loadOrders, type Order } from '@/lib/orders';
+import { fetchCustomers, fetchOrders } from '@/lib/api';
+import { type Order, type StoredCustomer } from '@/lib/orders';
 import { formatDateBR } from '@/lib/utils';
 
 const DAY = 1000 * 60 * 60 * 24;
 
 export default function ClientesPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [customers, setCustomers] = useState<ReturnType<typeof loadCustomers>>([]);
+  const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    setOrders(loadOrders());
-    setCustomers(loadCustomers());
+    Promise.all([fetchOrders().catch(() => []), fetchCustomers().catch(() => [])])
+      .then(([o, c]) => {
+        setOrders(o);
+        setCustomers(c);
+      });
   }, []);
 
   const enriched = useMemo(() => {

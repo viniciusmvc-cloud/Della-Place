@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import {
-  loadAvailability,
-  saveAvailability,
-  type AvailableDate,
-} from '@/lib/availability';
+  fetchAvailability,
+  removeAvailability,
+  upsertAvailability,
+} from '@/lib/api';
+import { type AvailableDate } from '@/lib/availability';
 import { addDays, formatDateBR, formatDateISO } from '@/lib/utils';
 
 const DEFAULT_CAPACITY = 8;
@@ -28,35 +29,43 @@ export default function DisponibilidadePage() {
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    setList(loadAvailability());
+    fetchAvailability().then(setList).catch(() => setList([]));
   }, []);
 
-  function persist(next: AvailableDate[]) {
-    setList(next);
-    saveAvailability(next);
+  function notify() {
     setSavedNotice('Disponibilidade atualizada.');
     setTimeout(() => setSavedNotice(null), 2000);
   }
 
-  function toggleDate(iso: string) {
+  async function toggleDate(iso: string) {
     const exists = list.find((a) => a.date === iso);
     if (exists) {
-      persist(list.filter((a) => a.date !== iso));
+      await removeAvailability(iso);
+      setList((prev) => prev.filter((a) => a.date !== iso));
     } else {
-      persist([...list, { date: iso, capacity: DEFAULT_CAPACITY, notes: '' }]);
+      const novo: AvailableDate = { date: iso, capacity: DEFAULT_CAPACITY, notes: '' };
+      await upsertAvailability(novo);
+      setList((prev) => [...prev, novo]);
     }
+    notify();
   }
 
-  function updateCapacity(iso: string, cap: number) {
-    persist(
-      list.map((a) =>
-        a.date === iso ? { ...a, capacity: Math.max(1, cap) } : a,
-      ),
-    );
+  async function updateCapacity(iso: string, cap: number) {
+    const it = list.find((a) => a.date === iso);
+    if (!it) return;
+    const updated = { ...it, capacity: Math.max(1, cap) };
+    await upsertAvailability(updated);
+    setList((prev) => prev.map((a) => (a.date === iso ? updated : a)));
+    notify();
   }
 
-  function updateNotes(iso: string, notes: string) {
-    persist(list.map((a) => (a.date === iso ? { ...a, notes } : a)));
+  async function updateNotes(iso: string, notes: string) {
+    const it = list.find((a) => a.date === iso);
+    if (!it) return;
+    const updated = { ...it, notes };
+    await upsertAvailability(updated);
+    setList((prev) => prev.map((a) => (a.date === iso ? updated : a)));
+    notify();
   }
 
   const sundays = nextSundays(WEEKS_AHEAD);

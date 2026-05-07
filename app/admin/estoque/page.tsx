@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import {
-  isLowStock,
-  loadStock,
-  newStockId,
-  saveStock,
-  type StockItem,
-} from '@/lib/stock';
+  createStockItem,
+  deleteStockItem,
+  fetchStock,
+  updateStockItem,
+} from '@/lib/api';
+import { isLowStock, newStockId, type StockItem } from '@/lib/stock';
 
 const UNITS = ['un', 'kg', 'g', 'L', 'ml', 'cx', 'pct'];
 
@@ -26,15 +26,10 @@ export default function EstoquePage() {
   });
 
   useEffect(() => {
-    setItems(loadStock());
+    fetchStock().then(setItems).catch(() => setItems([]));
   }, []);
 
-  function persist(next: StockItem[]) {
-    setItems(next);
-    saveStock(next);
-  }
-
-  function addItem(e: React.FormEvent) {
+  async function addItem(e: React.FormEvent) {
     e.preventDefault();
     if (!draft.name?.trim()) return;
     const item: StockItem = {
@@ -49,7 +44,7 @@ export default function EstoquePage() {
       notes: draft.notes?.trim() ?? '',
       updatedAt: new Date().toISOString(),
     };
-    persist([...items, item]);
+    setItems((prev) => [...prev, item]);
     setDraft({
       name: '',
       brand: '',
@@ -61,19 +56,22 @@ export default function EstoquePage() {
       notes: '',
     });
     setShowAdd(false);
+    await createStockItem(item);
   }
 
-  function update(id: string, patch: Partial<StockItem>) {
-    persist(
-      items.map((it) =>
+  async function update(id: string, patch: Partial<StockItem>) {
+    setItems((prev) =>
+      prev.map((it) =>
         it.id === id ? { ...it, ...patch, updatedAt: new Date().toISOString() } : it,
       ),
     );
+    await updateStockItem(id, patch);
   }
 
-  function remove(id: string) {
+  async function remove(id: string) {
     if (!confirm('Remover este produto do estoque?')) return;
-    persist(items.filter((it) => it.id !== id));
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    await deleteStockItem(id);
   }
 
   function adjust(id: string, delta: number) {

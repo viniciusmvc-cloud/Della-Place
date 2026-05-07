@@ -3,16 +3,21 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
+  createMenuItem,
+  deleteMenuItem,
+  fetchMenu,
+  fetchStock,
+  updateMenuItem,
+} from '@/lib/api';
+import {
   calcMargin,
   calcRecipeCost,
   ingredientCost,
-  loadMenu,
   newMenuId,
-  saveMenu,
   type MenuItem,
   type RecipeIngredient,
 } from '@/lib/menu';
-import { loadStock, type StockItem } from '@/lib/stock';
+import { type StockItem } from '@/lib/stock';
 import { RECIPE_UNITS, isCompatible } from '@/lib/units';
 
 export default function CardapioPage() {
@@ -22,27 +27,37 @@ export default function CardapioPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    setMenu(loadMenu());
-    setStock(loadStock());
+    Promise.all([fetchMenu(), fetchStock()])
+      .then(([m, s]) => {
+        setMenu(m);
+        setStock(s);
+      })
+      .catch(() => {});
   }, []);
 
-  function persist(next: MenuItem[]) {
-    setMenu(next);
-    saveMenu(next);
+  function notify() {
     setSavedNotice('Cardápio atualizado.');
     setTimeout(() => setSavedNotice(null), 2000);
   }
 
-  function update(id: string, patch: Partial<MenuItem>) {
-    persist(menu.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  async function update(id: string, patch: Partial<MenuItem>) {
+    setMenu((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+    try {
+      await updateMenuItem(id, patch);
+      notify();
+    } catch (err) {
+      alert(`Erro ao salvar: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
-  function remove(id: string) {
+  async function remove(id: string) {
     if (!confirm('Remover este sabor do cardápio?')) return;
-    persist(menu.filter((m) => m.id !== id));
+    setMenu((prev) => prev.filter((m) => m.id !== id));
+    await deleteMenuItem(id);
+    notify();
   }
 
-  function add() {
+  async function add() {
     const novo: MenuItem = {
       id: newMenuId(),
       name: 'Novo sabor',
@@ -52,8 +67,10 @@ export default function CardapioPage() {
       ingredients: [],
       active: true,
     };
-    persist([...menu, novo]);
+    setMenu((prev) => [...prev, novo]);
     setExpanded(novo.id);
+    await createMenuItem(novo);
+    notify();
   }
 
   function addIngredient(itemId: string) {

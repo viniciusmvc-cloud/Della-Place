@@ -1,18 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  createExpense,
+  fetchExpenses,
+  fetchMenu,
+  fetchOrders,
+  removeExpense,
+} from '@/lib/api';
 import {
   CATEGORIES,
   CATEGORY_LABEL,
-  deleteExpense,
-  loadExpenses,
   newExpenseId,
-  saveExpense,
   type Expense,
   type ExpenseCategory,
 } from '@/lib/expenses';
-import { loadMenu } from '@/lib/menu';
-import { loadOrders } from '@/lib/orders';
+import { type MenuItem } from '@/lib/menu';
+import { type Order } from '@/lib/orders';
 import {
   PERIODS,
   PERIOD_LABEL,
@@ -24,6 +28,8 @@ import { formatDateBR, formatDateISO } from '@/lib/utils';
 export default function FinanceiroPage() {
   const [period, setPeriod] = useState<Period>('month');
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [tick, setTick] = useState(0);
 
   const [date, setDate] = useState<string>(() => formatDateISO(new Date()));
@@ -32,11 +38,16 @@ export default function FinanceiroPage() {
   const [amount, setAmount] = useState<number>(0);
 
   useEffect(() => {
-    setExpenses(loadExpenses());
+    Promise.all([
+      fetchExpenses().catch(() => []),
+      fetchOrders().catch(() => []),
+      fetchMenu().catch(() => []),
+    ]).then(([e, o, m]) => {
+      setExpenses(e);
+      setOrders(o);
+      setMenu(m);
+    });
   }, [tick]);
-
-  const orders = useMemo(() => loadOrders(), [tick]);
-  const menu = useMemo(() => loadMenu(), [tick]);
 
   const periodOrders = orders.filter((o) => inPeriod(o.date, period));
   const periodExp = expenses.filter((e) => inPeriod(e.date, period));
@@ -67,10 +78,10 @@ export default function FinanceiroPage() {
     return Object.entries(out).sort((a, b) => b[1] - a[1]);
   })();
 
-  function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!description.trim() || amount <= 0) return;
-    saveExpense({
+    await createExpense({
       id: newExpenseId(),
       date,
       category,
@@ -83,9 +94,9 @@ export default function FinanceiroPage() {
     setTick((t) => t + 1);
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     if (!confirm('Excluir esta despesa?')) return;
-    deleteExpense(id);
+    await removeExpense(id);
     setTick((t) => t + 1);
   }
 

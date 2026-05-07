@@ -1,10 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { loadExpenses } from '@/lib/expenses';
-import { calcMargin, loadMenu } from '@/lib/menu';
-import { loadOrders, loadCustomers } from '@/lib/orders';
+import { useEffect, useState } from 'react';
+import {
+  fetchCustomers,
+  fetchExpenses,
+  fetchMenu,
+  fetchOrders,
+} from '@/lib/api';
+import { type Expense } from '@/lib/expenses';
+import { calcMargin, type MenuItem } from '@/lib/menu';
+import { type Order, type StoredCustomer } from '@/lib/orders';
 import {
   PERIODS,
   PERIOD_LABEL,
@@ -14,15 +20,23 @@ import {
 
 export default function AdminDashboard() {
   const [period, setPeriod] = useState<Period>('month');
-  const [tick, setTick] = useState(0);
-
-  const orders = useMemo(() => loadOrders(), [tick]);
-  const expenses = useMemo(() => loadExpenses(), [tick]);
-  const customers = useMemo(() => loadCustomers(), [tick]);
-  const menu = useMemo(() => loadMenu(), [tick]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [customers, setCustomers] = useState<StoredCustomer[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
 
   useEffect(() => {
-    setTick((t) => t + 1);
+    Promise.all([
+      fetchOrders().catch(() => []),
+      fetchExpenses().catch(() => []),
+      fetchCustomers().catch(() => []),
+      fetchMenu().catch(() => []),
+    ]).then(([o, e, c, m]) => {
+      setOrders(o);
+      setExpenses(e);
+      setCustomers(c);
+      setMenu(m);
+    });
   }, []);
 
   const inPeriodOrders = orders.filter((o) => inPeriod(o.date, period));

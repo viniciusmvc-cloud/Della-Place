@@ -1,12 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  loadOrders,
-  updateOrderStatus,
-  type Order,
-  type OrderStatus,
-} from '@/lib/orders';
+import { fetchOrders, setOrderStatus as apiSetStatus } from '@/lib/api';
+import { type Order, type OrderStatus } from '@/lib/orders';
 import {
   PERIODS,
   PERIOD_LABEL,
@@ -37,7 +33,7 @@ export default function PedidosPage() {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    setOrders(loadOrders());
+    fetchOrders().then(setOrders).catch(() => setOrders([]));
   }, [tick]);
 
   const sundayDates = useMemo(() => {
@@ -67,19 +63,19 @@ export default function PedidosPage() {
     };
   }, [filtered]);
 
-  function cycleStatus(o: Order) {
+  async function cycleStatus(o: Order) {
     const next: Record<OrderStatus, OrderStatus> = {
       pendente: 'confirmado',
       confirmado: 'pago',
       pago: 'pendente',
       cancelado: 'pendente',
     };
-    updateOrderStatus(o.id, next[o.status]);
+    await apiSetStatus(o.id, next[o.status]);
     setTick((t) => t + 1);
   }
 
-  function setStatus(id: string, status: OrderStatus) {
-    updateOrderStatus(id, status);
+  async function setStatus(id: string, status: OrderStatus) {
+    await apiSetStatus(id, status);
     setTick((t) => t + 1);
   }
 
