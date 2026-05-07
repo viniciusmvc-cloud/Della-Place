@@ -2,10 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import CalendarPicker from '@/components/booking/CalendarPicker';
-import { loadAvailability } from '@/lib/availability';
+import {
+  createOrder,
+  fetchAvailability,
+  fetchMenu,
+  lookupCustomer,
+  upsertCustomer,
+} from '@/lib/api';
 import { CONTACT, whatsAppLink } from '@/lib/contact';
-import { loadMenu, type MenuItem } from '@/lib/menu';
-import { newOrderId, saveOrder, type Order } from '@/lib/orders';
+import { DEFAULT_MENU, type MenuItem } from '@/lib/menu';
+import { newOrderId, type Order } from '@/lib/orders';
 import { addDays, formatDateBR, formatDateISO } from '@/lib/utils';
 
 type Finish = 'Assada' | 'Pré-assada' | 'Congelada';
@@ -33,8 +39,6 @@ const EMPTY_CUSTOMER: Customer = {
   blockApt: '',
 };
 
-const STORAGE_KEY = 'della-pace.customers.v1';
-
 function digitsOnly(s: string): string {
   return s.replace(/\D/g, '');
 }
@@ -46,22 +50,6 @@ function formatCpf(s: string): string {
   if (parts[2]) out += `.${parts[2]}`;
   if (parts[3]) out += `-${parts[3]}`;
   return out;
-}
-function loadAllCustomers(): Record<string, Customer> {
-  if (typeof window === 'undefined') return {};
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-function saveCustomerLocal(c: Customer): void {
-  if (typeof window === 'undefined') return;
-  const all = loadAllCustomers();
-  const key = digitsOnly(c.cpf);
-  if (key.length !== 11) return;
-  all[key] = c;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
 }
 function nextSundays(count: number): Date[] {
   const result: Date[] = [];
@@ -103,18 +91,25 @@ export default function Booking() {
   const [cadastroSavedNotice, setCadastroSavedNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    const m = loadMenu().filter((x) => x.active);
-    setMenu(m);
-    if (m.length > 0 && !stagingFlavor) setStagingFlavor(m[0].name);
-
-    const av = loadAvailability();
-    if (av.length > 0) {
-      setAvailableDates(
-        av.map((a) => new Date(`${a.date}T12:00:00`)).filter((d) => d >= new Date(new Date().setHours(0, 0, 0, 0))),
-      );
-    } else {
-      setAvailableDates(nextSundays(8));
-    }
+    Promise.all([
+      fetchMenu().catch(() => DEFAULT_MENU),
+      fetchAvailability().catch(() => []),
+    ]).then(([menuData, av]) => {
+      const active = menuData.filter((x) => x.active);
+      setMenu(active);
+      if (active.length > 0) setStagingFlavor((s) => s || active[0].name);
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      if (av.length > 0) {
+        setAvailableDates(
+          av
+            .map((a) => new Date(`${a.date}T12:00:00`))
+            .filter((d) => d >= todayStart),
+        );
+      } else {
+        setAvailableDates(nextSundays(8));
+      }
+    });
   }, []);
 
   function priceFor(name: string): number {
@@ -132,21 +127,26 @@ export default function Booking() {
       setLookupMessage('short');
       return;
     }
-    const all = loadAllCustomers();
-    const found = all[key];
-    if (found) {
-      setCustomer({
-        cpf: found.cpf,
-        fullName: found.fullName,
-        phone: found.phone,
-        email: found.email,
-        address: found.address,
-        blockApt: found.blockApt,
-      });
-      setLookupMessage('found');
-    } else {
-      setLookupMessage('notfound');
-    }
+    let cancelled = false;
+    lookupCustomer(customer.cpf).then((found) => {
+      if (cancelled) return;
+      if (found) {
+        setCustomer({
+          cpf: found.cpf,
+          fullName: found.fullName,
+          phone: found.phone,
+          email: found.email,
+          address: found.address,
+          blockApt: found.blockApt,
+        });
+        setLookupMessage('found');
+      } else {
+        setLookupMessage('notfound');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [customer.cpf, mode]);
 
   const allSlots = useMemo(() => generateAllSlots(), []);
@@ -192,11 +192,20 @@ export default function Booking() {
   const orderOk = !!date && items.length > 0;
   const allOk = cadastroOk && orderOk;
 
-  function handleSaveCadastro() {
+  async function handleSaveCadastro() {
     if (!cadastroOk) return;
-    saveCustomerLocal(customer);
-    setCadastroSavedNotice('Cadastro salvo. Você pode reutilizar com o mesmo CPF nas próximas reservas.');
-    setTimeout(() => setCadastroSavedNotice(null), 4500);
+    try {
+      await upsertCustomer(customer);
+      setCadastroSavedNotice(
+        'Cadastro salvo. Você pode reutilizar com o mesmo CPF nas próximas reservas.',
+      );
+      setTimeout(() => setCadastroSavedNotice(null), 4500);
+    } catch (err) {
+      setCadastroSavedNotice(
+        `Erro ao salvar: ${err instanceof Error ? err.message : 'tente novamente'}`,
+      );
+      setTimeout(() => setCadastroSavedNotice(null), 5000);
+    }
   }
 
   function buildOrderMessage(): string {
@@ -232,12 +241,12 @@ export default function Booking() {
     return lines.join('\n');
   }
 
-  function handleSendOrder(e: React.MouseEvent<HTMLAnchorElement>) {
+  async function handleSendOrder(e: React.MouseEvent<HTMLAnchorElement>) {
     if (!allOk || !date) {
       e.preventDefault();
       return;
     }
-    saveCustomerLocal(customer);
+    e.preventDefault();
     const order: Order = {
       id: newOrderId(),
       createdAt: new Date().toISOString(),
@@ -253,7 +262,14 @@ export default function Booking() {
       notes: orderNotes.trim(),
       status: 'pendente',
     };
-    saveOrder(order);
+    try {
+      await createOrder(order);
+      window.open(whatsAppLink(buildOrderMessage()), '_blank', 'noopener');
+    } catch (err) {
+      alert(
+        `Erro ao salvar o pedido: ${err instanceof Error ? err.message : String(err)}\n\nO pedido NÃO foi enviado. Tente novamente.`,
+      );
+    }
   }
 
   return (

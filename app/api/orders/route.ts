@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     }
 
     await transaction(async (conn) => {
-      await conn.execute(
+      await conn.query(
         `INSERT INTO customers (cpf, full_name, phone, email, address, block_apt)
          VALUES (?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
         ],
       );
 
-      await conn.execute(
+      await conn.query(
         `INSERT INTO orders (id, customer_cpf, delivery_date, total, notes, status)
          VALUES (?, ?, ?, ?, ?, 'pendente')`,
         [
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
       );
 
       for (const item of body.items) {
-        await conn.execute(
+        await conn.query(
           `INSERT INTO order_items (order_id, time_slot, flavor, finish, price)
            VALUES (?, ?, ?, ?, ?)`,
           [body.id, item.time, item.flavor, item.finish, item.price],

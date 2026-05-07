@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { loadMenu, type MenuItem } from '@/lib/menu';
+import { fetchMenu } from '@/lib/api';
+import { DEFAULT_MENU, type MenuItem } from '@/lib/menu';
 
 export default function Menu() {
   const [items, setItems] = useState<MenuItem[]>([]);
 
   useEffect(() => {
-    setItems(loadMenu().filter((m) => m.active));
+    fetchMenu()
+      .then((data) => setItems(data.filter((m) => m.active)))
+      .catch(() => setItems(DEFAULT_MENU.filter((m) => m.active)));
   }, []);
 
   return (

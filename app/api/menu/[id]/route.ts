@@ -47,18 +47,18 @@ export async function PATCH(
 
     await transaction(async (conn) => {
       if (fields.length > 0) {
-        await conn.execute(
+        await conn.query(
           `UPDATE menu_items SET ${fields.join(', ')} WHERE id = ?`,
           [...values, id],
         );
       }
       if (body.ingredients) {
-        await conn.execute(
+        await conn.query(
           'DELETE FROM recipe_ingredients WHERE menu_item_id = ?',
           [id],
         );
         for (const ing of body.ingredients) {
-          await conn.execute(
+          await conn.query(
             'INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, amount, unit) VALUES (?, ?, ?, ?)',
             [id, ing.stockItemId, ing.amount, ing.unit],
           );
