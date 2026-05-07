@@ -4,14 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import CalendarPicker from '@/components/booking/CalendarPicker';
 import { loadAvailability } from '@/lib/availability';
 import { CONTACT, whatsAppLink } from '@/lib/contact';
-import {
-  calcRecipeCost,
-  effectiveCost,
-  loadMenu,
-  type MenuItem,
-} from '@/lib/menu';
+import { loadMenu, type MenuItem } from '@/lib/menu';
 import { newOrderId, saveOrder, type Order } from '@/lib/orders';
-import { loadStock } from '@/lib/stock';
 import { addDays, formatDateBR, formatDateISO } from '@/lib/utils';
 
 type Finish = 'Assada' | 'Pré-assada' | 'Congelada';

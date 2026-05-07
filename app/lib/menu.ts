@@ -69,7 +69,7 @@ export function loadMenu(): MenuItem[] {
     if (!raw) return DEFAULT_MENU;
     const parsed = JSON.parse(raw) as MenuItem[];
     return parsed.length > 0
-      ? parsed.map((m) => ({ ingredients: [], ...m }))
+      ? parsed.map((m) => ({ ...m, ingredients: m.ingredients ?? [] }))
       : DEFAULT_MENU;
   } catch {
     return DEFAULT_MENU;
