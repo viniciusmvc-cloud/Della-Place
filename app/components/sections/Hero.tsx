@@ -2,9 +2,38 @@ import { LogoTextOnly } from '@/components/brand/Logo';
 import PhotoCarousel from '@/components/ui/PhotoCarousel';
 
 const HERO_IMAGES = [
-  { src: '/images/pizza-calabria-hero.png', alt: 'Calabria — molho San Marzano, calabresa, cebola e azeitonas' },
-  { src: '/images/pizza-cheese-pull.png', alt: 'Massa de longa fermentação — fatia sendo levantada' },
-  { src: '/images/pizza-calabria.jpg', alt: 'Pizza artesanal Della Pace na tábua' },
+  {
+    src: '/images/pizza-calabria-hero.png',
+    alt: 'Pizza Della Pace',
+    caption: {
+      text: 'Já comi pizza na Itália, em Nova York, em São Paulo. A do Aurélio supera todas.',
+      author: 'Vinícius e Alana',
+    },
+  },
+  {
+    src: '/images/pizza-cheese-pull.png',
+    alt: 'Massa de longa fermentação',
+    caption: {
+      text: 'Massa que pediu paciência. Ingrediente que pediu cuidado.',
+      author: 'Della Pace',
+    },
+  },
+  {
+    src: '/images/insta-1.jpeg',
+    alt: 'Pizza com presunto cru, mussarela de búfala e pesto',
+    caption: {
+      text: 'Pizza excelente como sempre. Sucesso pra vocês.',
+      author: 'Sérgio Oliveira',
+    },
+  },
+  {
+    src: '/images/pizza-calabria.jpg',
+    alt: 'Pizza Calabria na tábua',
+    caption: {
+      text: 'San Marzano, fermentação natural, uma pizza por vez no forno.',
+      author: 'Della Pace',
+    },
+  },
 ];
 
 export default function Hero() {
@@ -35,9 +64,9 @@ export default function Hero() {
           </p>
 
           <p className="mx-auto mb-8 max-w-md text-sm text-primary-500/70 md:mx-0">
-            Massa de longa fermentação natural, ingredientes selecionados,
-            molho artesanal de tomate San Marzano. Produção limitada — uma
-            pizza por vez no forno.
+            Pizza pra dividir com quem você ama, ou só pra você mesmo. A massa
+            pediu paciência, o ingrediente pediu cuidado. Só falta sentar à
+            mesa sem pressa.
           </p>
 
           <div className="flex flex-wrap justify-center gap-3 md:justify-start">
@@ -58,15 +87,7 @@ export default function Hero() {
 
         <div className="relative">
           <div className="absolute -inset-4 -z-10 rounded-full bg-accent-100/40 blur-2xl" />
-          <PhotoCarousel images={HERO_IMAGES} />
-          <div className="absolute -bottom-4 -right-4 hidden rounded-xl border border-accent-200 bg-white px-4 py-3 shadow-sm md:block">
-            <p
-              className="text-sm italic text-primary-500"
-              style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
-            >
-              San Marzano · Fermentação natural
-            </p>
-          </div>
+          <PhotoCarousel images={HERO_IMAGES} showCaptions />
         </div>
       </div>
     </section>

@@ -8,6 +8,7 @@ import Hero from '@/components/sections/Hero';
 import HowItWorks from '@/components/sections/HowItWorks';
 import MarqueeStrip from '@/components/sections/MarqueeStrip';
 import Menu from '@/components/sections/Menu';
+import Suggestions from '@/components/sections/Suggestions';
 import WhatsAppButton from '@/components/ui/WhatsAppButton';
 
 export default function HomePage() {
@@ -23,6 +24,7 @@ export default function HomePage() {
         <Menu />
         <Booking />
         <CommunityWall />
+        <Suggestions />
       </main>
       <Footer />
       <WhatsAppButton />
