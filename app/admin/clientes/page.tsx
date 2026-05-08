@@ -176,7 +176,19 @@ export default function ClientesPage() {
                       {e.customer.fullName}
                     </p>
                     <p className="text-[11px] text-primary-500/60">
-                      {e.customer.phone} · {e.customer.cpf}
+                      <a
+                        href={`https://wa.me/55${e.customer.phone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Abrir conversa no WhatsApp"
+                        className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+                          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.74.45 3.43 1.32 4.93L2 22l5.32-1.4a9.92 9.92 0 0 0 4.72 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.13-2.9-7.01A9.83 9.83 0 0 0 12.04 2zm0 1.81c2.16 0 4.18.84 5.71 2.36a8.07 8.07 0 0 1 2.37 5.74c0 4.46-3.62 8.09-8.08 8.09-1.49 0-2.93-.4-4.18-1.15l-.3-.18-3.1.81.83-3.02-.2-.31a8.04 8.04 0 0 1-1.23-4.24c0-4.46 3.62-8.1 8.08-8.1z" />
+                        </svg>
+                        {e.customer.phone}
+                      </a>
+                      {' · '}{e.customer.cpf}
                     </p>
                   </td>
                   <td className="px-3 py-2">

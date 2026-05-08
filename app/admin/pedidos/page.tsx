@@ -45,7 +45,13 @@ export default function PedidosPage() {
     .filter((o) => (statusFilter === 'all' ? true : o.status === statusFilter))
     .filter((o) => (period === 'all' ? true : inPeriod(o.date, period)))
     .filter((o) => (dateFilter ? o.date === dateFilter : true))
-    .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const aTime = a.items[0]?.time ?? '00:00';
+      const bTime = b.items[0]?.time ?? '00:00';
+      if (aTime !== bTime) return aTime.localeCompare(bTime);
+      return a.customer.fullName.localeCompare(b.customer.fullName);
+    });
 
   const stats = useMemo(() => {
     const inScope = filtered.filter((o) => o.status !== 'cancelado');

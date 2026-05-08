@@ -7,6 +7,7 @@ import { useState } from 'react';
 const NAV = [
   { href: '/admin', label: 'Dashboard', icon: '📊' },
   { href: '/admin/pedidos', label: 'Pedidos', icon: '🍕' },
+  { href: '/admin/mise-en-place', label: 'Mise en place', icon: '📋' },
   { href: '/admin/clientes', label: 'Clientes', icon: '👥' },
   { href: '/admin/disponibilidade', label: 'Disponibilidade', icon: '📅' },
   { href: '/admin/cardapio', label: 'Cardápio', icon: '🍴' },
