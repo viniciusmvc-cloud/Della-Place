@@ -14,10 +14,16 @@ export const metadata: Metadata = {
   title: 'Della Pace - Pizzeria Artigianale',
   description: 'Pizzaria artesanal Della Pace',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icons/dellapace-logo.jpeg',
+    shortcut: '/icons/dellapace-logo.jpeg',
+    apple: '/icons/dellapace-logo.jpeg',
+  },
   appleWebApp: {
     capable: true,
     title: 'Della Pace',
     statusBarStyle: 'default',
+    startupImage: '/icons/dellapace-logo.jpeg',
   },
 };
 
