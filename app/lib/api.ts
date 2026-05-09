@@ -123,3 +123,27 @@ export function upsertAvailability(a: AvailableDate) {
 export function removeAvailability(date: string) {
   return apiFetch(`/api/availability/${date}`, { method: 'DELETE' });
 }
+
+// ─── Suggestions ────────────────────────────────────────
+export type SuggestionStatus = 'new' | 'read' | 'done' | 'archived';
+export type Suggestion = {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  message: string;
+  status: SuggestionStatus;
+  createdAt: string;
+};
+export function fetchSuggestions(): Promise<Suggestion[]> {
+  return apiFetch<Suggestion[]>('/api/suggestions');
+}
+export function updateSuggestionStatus(id: number, status: SuggestionStatus) {
+  return apiFetch(`/api/suggestions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+export function deleteSuggestion(id: number) {
+  return apiFetch(`/api/suggestions/${id}`, { method: 'DELETE' });
+}
