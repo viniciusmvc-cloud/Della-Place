@@ -7,10 +7,23 @@ import { formatDateBR } from '@/lib/utils';
 
 const DAY = 1000 * 60 * 60 * 24;
 
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+function firstLetter(name: string) {
+  const ch = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+  return /[A-Z]/.test(ch) ? ch : '#';
+}
+
 export default function ClientesPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [search, setSearch] = useState('');
+  const [letter, setLetter] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([fetchOrders().catch(() => []), fetchCustomers().catch(() => [])])
@@ -88,8 +101,21 @@ export default function ClientesPage() {
           e.customer.cpf.includes(search) ||
           e.customer.phone.includes(search),
       )
-      .sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [customers, orders, search]);
+      .filter(
+        (e) => letter === null || firstLetter(e.customer.fullName) === letter,
+      )
+      .sort((a, b) =>
+        letter
+          ? a.customer.fullName.localeCompare(b.customer.fullName, 'pt-BR')
+          : b.totalSpent - a.totalSpent,
+      );
+  }, [customers, orders, search, letter]);
+
+  const lettersWithCustomers = useMemo(() => {
+    const set = new Set<string>();
+    customers.forEach((c) => set.add(firstLetter(c.fullName)));
+    return set;
+  }, [customers]);
 
   const top5 = enriched.slice(0, 5);
   const inactive = enriched.filter(
@@ -118,6 +144,58 @@ export default function ClientesPage() {
         placeholder="Buscar por nome, CPF ou telefone…"
         className="w-full rounded-md border border-primary-200 bg-white px-4 py-2 text-sm outline-none focus:border-primary-500 md:max-w-md"
       />
+
+      <div className="flex flex-wrap items-center gap-1 rounded-xl border border-primary-100 bg-white p-2">
+        <button
+          type="button"
+          onClick={() => setLetter(null)}
+          className={
+            letter === null
+              ? 'rounded bg-primary-500 px-2.5 py-1 text-[11px] font-medium text-white'
+              : 'rounded px-2.5 py-1 text-[11px] text-primary-500/70 hover:bg-primary-50 hover:text-primary-500'
+          }
+          title="Mostrar todos os clientes"
+        >
+          Todos
+        </button>
+        <span className="mx-1 h-4 w-px bg-primary-100" />
+        {ALPHABET.map((L) => {
+          const has = lettersWithCustomers.has(L);
+          const active = letter === L;
+          return (
+            <button
+              key={L}
+              type="button"
+              disabled={!has}
+              onClick={() => setLetter(active ? null : L)}
+              className={
+                active
+                  ? 'rounded bg-primary-500 px-2 py-1 text-[11px] font-medium text-white'
+                  : has
+                    ? 'rounded px-2 py-1 text-[11px] text-primary-500/80 hover:bg-primary-50 hover:text-primary-500'
+                    : 'cursor-not-allowed rounded px-2 py-1 text-[11px] text-primary-500/25'
+              }
+              title={has ? `Filtrar por ${L}` : `Sem clientes em ${L}`}
+            >
+              {L}
+            </button>
+          );
+        })}
+        {lettersWithCustomers.has('#') && (
+          <button
+            type="button"
+            onClick={() => setLetter(letter === '#' ? null : '#')}
+            className={
+              letter === '#'
+                ? 'rounded bg-primary-500 px-2 py-1 text-[11px] font-medium text-white'
+                : 'rounded px-2 py-1 text-[11px] text-primary-500/80 hover:bg-primary-50 hover:text-primary-500'
+            }
+            title="Outros (sem letra)"
+          >
+            #
+          </button>
+        )}
+      </div>
 
       <section className="grid gap-3 md:grid-cols-3">
         <Alert
