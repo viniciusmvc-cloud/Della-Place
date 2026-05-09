@@ -6,10 +6,73 @@ import {
   fetchExpenses,
   fetchMenu,
   fetchOrders,
+  fetchStock,
 } from '@/lib/api';
 import { type Expense } from '@/lib/expenses';
-import { type MenuItem } from '@/lib/menu';
+import {
+  ingredientCost,
+  type MenuItem,
+  type RecipeIngredient,
+} from '@/lib/menu';
 import { type Order, type StoredCustomer } from '@/lib/orders';
+import { type StockItem } from '@/lib/stock';
+
+type Block = 'massa' | 'molho' | 'cobertura' | 'operacao';
+
+const BLOCK_LABEL: Record<Block, string> = {
+  massa: 'Massa',
+  molho: 'Molho',
+  cobertura: 'Cobertura',
+  operacao: 'Operação',
+};
+
+const BLOCK_TONE: Record<Block, string> = {
+  massa: 'bg-amber-400',
+  molho: 'bg-rose-400',
+  cobertura: 'bg-emerald-400',
+  operacao: 'bg-blue-400',
+};
+
+function classifyIngredient(name: string): Block {
+  const n = name.toLowerCase();
+  if (/farinh|fermento|levedu/.test(n)) return 'massa';
+  if (/tomate|molho|manjeric|polp|passata/.test(n)) return 'molho';
+  if (/sal\b|azeite|embalag|gás|gas|caixa|papel/.test(n)) return 'operacao';
+  return 'cobertura';
+}
+
+type BlockBreakdown = {
+  massa: number;
+  molho: number;
+  cobertura: number;
+  operacao: number;
+  total: number;
+};
+
+function emptyBreakdown(): BlockBreakdown {
+  return { massa: 0, molho: 0, cobertura: 0, operacao: 0, total: 0 };
+}
+
+function costPerPizzaByBlock(
+  item: MenuItem,
+  stock: StockItem[],
+): BlockBreakdown {
+  const out = emptyBreakdown();
+  if (!item.ingredients || item.ingredients.length === 0) {
+    out.cobertura = item.cost;
+    out.total = item.cost;
+    return out;
+  }
+  for (const ing of item.ingredients as RecipeIngredient[]) {
+    const stk = stock.find((s) => s.id === ing.stockItemId);
+    if (!stk) continue;
+    const cost = ingredientCost(ing, stk);
+    const block = classifyIngredient(stk.name);
+    out[block] += cost;
+    out.total += cost;
+  }
+  return out;
+}
 import {
   PERIODS,
   PERIOD_LABEL,
@@ -24,6 +87,7 @@ export default function RelatoriosPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [stock, setStock] = useState<StockItem[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -31,11 +95,13 @@ export default function RelatoriosPage() {
       fetchExpenses().catch(() => []),
       fetchCustomers().catch(() => []),
       fetchMenu().catch(() => []),
-    ]).then(([o, e, c, m]) => {
+      fetchStock().catch(() => []),
+    ]).then(([o, e, c, m, s]) => {
       setOrders(o);
       setExpenses(e);
       setCustomers(c);
       setMenu(m);
+      setStock(s);
     });
   }, []);
 
@@ -110,6 +176,34 @@ export default function RelatoriosPage() {
 
   const maxRevByDate = Math.max(1, ...byDate.map(([, v]) => v.revenue));
 
+  const perPizzaCost = menu
+    .filter((m) => m.active)
+    .map((m) => ({
+      item: m,
+      breakdown: costPerPizzaByBlock(m, stock),
+    }));
+
+  const productionTotal = (() => {
+    const totals = emptyBreakdown();
+    periodOrders
+      .filter((o) => o.status !== 'cancelado')
+      .forEach((o) =>
+        o.items.forEach((it) => {
+          const m = menu.find(
+            (mi) => mi.name.toLowerCase() === it.flavor.toLowerCase(),
+          );
+          if (!m) return;
+          const b = costPerPizzaByBlock(m, stock);
+          totals.massa += b.massa;
+          totals.molho += b.molho;
+          totals.cobertura += b.cobertura;
+          totals.operacao += b.operacao;
+          totals.total += b.total;
+        }),
+      );
+    return totals;
+  })();
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -151,6 +245,131 @@ export default function RelatoriosPage() {
         <KPI label="Despesas" value={`R$ ${opEx}`} />
         <KPI label="Pedidos" value={String(periodOrders.length)} />
         <KPI label="Clientes únicos" value={String(new Set(periodOrders.map(o => o.customer.cpf)).size)} />
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-xl border border-primary-100 bg-white p-5">
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+            Custo por pizza · breakdown
+          </h3>
+          <p className="mb-4 text-[11px] text-primary-500/60">
+            Custo de cada sabor dividido por bloco de produção (massa,
+            molho, cobertura). Inclui também venda, lucro e margem.
+          </p>
+          {perPizzaCost.length === 0 ? (
+            <p className="text-sm text-primary-500/60">
+              Nenhum sabor ativo no cardápio.
+            </p>
+          ) : (
+            <ul className="space-y-4">
+              {perPizzaCost.map(({ item, breakdown }) => {
+                const profit = item.price - breakdown.total;
+                const marginPct =
+                  item.price > 0 ? (profit / item.price) * 100 : 0;
+                return (
+                  <li
+                    key={item.id}
+                    className="rounded-lg border border-primary-100 bg-primary-50/30 p-3"
+                  >
+                    <header className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                      <p
+                        className="text-base text-primary-500"
+                        style={{
+                          fontFamily:
+                            'var(--font-cormorant), Georgia, serif',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {item.name}
+                      </p>
+                      <p className="text-[11px] text-primary-500/70">
+                        Venda R$ {item.price} · Custo R${' '}
+                        {breakdown.total.toFixed(2)} · Lucro R${' '}
+                        {profit.toFixed(2)} ·{' '}
+                        <span
+                          className={
+                            marginPct >= 50
+                              ? 'text-emerald-700'
+                              : marginPct >= 30
+                                ? 'text-amber-700'
+                                : 'text-rose-700'
+                          }
+                        >
+                          {marginPct.toFixed(0)}% margem
+                        </span>
+                      </p>
+                    </header>
+                    <BlockBars b={breakdown} />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-primary-100 bg-white p-5">
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+            Custo total da produção · {PERIOD_LABEL[period]}
+          </h3>
+          <p className="mb-4 text-[11px] text-primary-500/60">
+            Soma do custo de ingredientes de TODAS as pizzas vendidas no
+            período, agrupado por bloco.
+          </p>
+          {productionTotal.total === 0 ? (
+            <p className="text-sm text-primary-500/60">
+              Sem produção no período.
+            </p>
+          ) : (
+            <>
+              <ul className="space-y-2">
+                {(['massa', 'molho', 'cobertura', 'operacao'] as Block[]).map(
+                  (b) => {
+                    const v = productionTotal[b];
+                    const pct =
+                      productionTotal.total > 0
+                        ? (v / productionTotal.total) * 100
+                        : 0;
+                    return (
+                      <li key={b}>
+                        <div className="mb-1 flex justify-between text-xs">
+                          <span className="flex items-center gap-2 text-primary-500">
+                            <span
+                              className={`inline-block h-2 w-2 rounded-full ${BLOCK_TONE[b]}`}
+                            />
+                            {BLOCK_LABEL[b]}
+                          </span>
+                          <span className="text-primary-500/70">
+                            R$ {v.toFixed(2)} · {pct.toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-primary-100">
+                          <div
+                            className={`h-full ${BLOCK_TONE[b]}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  },
+                )}
+              </ul>
+              <div className="mt-4 flex items-baseline justify-between border-t border-primary-100 pt-3">
+                <span className="text-xs uppercase tracking-widest text-primary-500/60">
+                  Custo total
+                </span>
+                <span
+                  className="text-2xl text-primary-500"
+                  style={{
+                    fontFamily: 'var(--font-cormorant), Georgia, serif',
+                    fontWeight: 600,
+                  }}
+                >
+                  R$ {productionTotal.total.toFixed(2)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
       </section>
 
       <section className="rounded-xl border border-primary-100 bg-white p-5">
@@ -205,6 +424,33 @@ export default function RelatoriosPage() {
         Total de clientes cadastrados (todos os tempos): {customers.length}
       </p>
     </div>
+  );
+}
+
+function BlockBars({ b }: { b: BlockBreakdown }) {
+  const blocks: Block[] = ['massa', 'molho', 'cobertura', 'operacao'];
+  return (
+    <ul className="space-y-1.5">
+      {blocks.map((bl) => {
+        const v = b[bl];
+        if (v === 0) return null;
+        const pct = b.total > 0 ? (v / b.total) * 100 : 0;
+        return (
+          <li key={bl} className="grid grid-cols-[80px_1fr_auto] items-center gap-2 text-[11px]">
+            <span className="text-primary-500/70">{BLOCK_LABEL[bl]}</span>
+            <div className="h-2 overflow-hidden rounded-full bg-white">
+              <div
+                className={`h-full ${BLOCK_TONE[bl]}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="tabular-nums text-primary-500/80">
+              R$ {v.toFixed(2)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
