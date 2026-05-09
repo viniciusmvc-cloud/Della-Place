@@ -18,7 +18,7 @@ import { newOrderId, type StoredCustomer } from '@/lib/orders';
 import { formatDateBR, formatDateISO } from '@/lib/utils';
 
 type Finish = 'Assada' | 'Pré-assada' | 'Congelada';
-const FINISHES: Finish[] = ['Assada', 'Pré-assada', 'Congelada'];
+const FINISHES: Finish[] = ['Assada', 'Congelada'];
 
 const STORAGE_KEY = 'della-pace.customer.cpf.v1';
 

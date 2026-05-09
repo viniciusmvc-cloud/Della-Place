@@ -17,7 +17,7 @@ import { addDays, formatDateBR, formatDateISO } from '@/lib/utils';
 
 type Finish = 'Assada' | 'Pré-assada' | 'Congelada';
 
-const FINISHES: Finish[] = ['Assada', 'Pré-assada', 'Congelada'];
+const FINISHES: Finish[] = ['Assada', 'Congelada'];
 
 type PizzaItem = { time: string; flavor: string; finish: Finish };
 type Mode = 'idle' | 'new' | 'returning';

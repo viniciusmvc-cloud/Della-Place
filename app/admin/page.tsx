@@ -65,6 +65,9 @@ export default function AdminDashboard() {
   const opEx = inPeriodExpenses.reduce((s, e) => s + e.amount, 0);
   const profit = revenue - pizzaCost - opEx;
   const totalOrders = inPeriodOrders.filter((o) => o.status !== 'cancelado').length;
+  const totalPizzas = inPeriodOrders
+    .filter((o) => o.status !== 'cancelado')
+    .reduce((s, o) => s + o.items.length, 0);
   const pendentes = orders.filter((o) => o.status === 'pendente').length;
   const aReceber = orders
     .filter((o) => o.status === 'confirmado')
@@ -136,6 +139,12 @@ export default function AdminDashboard() {
           label="Pedidos"
           value={String(totalOrders)}
           hint="ativos no período"
+          href="/admin/pedidos"
+        />
+        <Stat
+          label="Pizzas"
+          value={String(totalPizzas)}
+          hint="unidades vendidas"
           href="/admin/pedidos"
         />
         <Stat
