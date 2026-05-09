@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import { fetchOrders, setOrderStatus as apiSetStatus } from '@/lib/api';
 import { type Order, type OrderStatus } from '@/lib/orders';
 import {
@@ -30,7 +31,7 @@ const CONFIRM_TONE: Record<ConfirmationStatus, string> = {
 };
 
 const PAY_TONE: Record<PaymentStatus, string> = {
-  pendente: 'bg-slate-100 text-slate-700 border-slate-200',
+  pendente: 'bg-rose-100 text-rose-800 border-rose-200',
   recebido: 'bg-emerald-100 text-emerald-800 border-emerald-200',
 };
 
@@ -114,6 +115,23 @@ export default function PedidosPage() {
           de ações pra confirmar, marcar pago ou cancelar.
         </p>
       </header>
+
+      <HelpBanner
+        id="pedidos"
+        title="Pedidos"
+        whenToFill="Você não cria pedidos aqui. Eles entram automaticamente quando o cliente reserva pelo site."
+        steps={[
+          'Confirme o pedido após combinar com o cliente: clique no badge "Pendente" da coluna Confirmação. Vira "Confirmado".',
+          'Quando receber o pagamento (na entrega): clique no badge "Pendente" da coluna Pagamento. Vira "Recebido".',
+          'Pra alterar (cancelar, reabrir, voltar status): use o menu ⋯ na última coluna.',
+          'Clique no telefone do cliente pra abrir direto o WhatsApp dele.',
+        ]}
+        doNot={[
+          'Custos e ingredientes não vão aqui. Vão em Compras (ingredientes) ou Financeiro (gás, luz, água).',
+          'Não cancele um pedido só porque o cliente desmarcou. Conversa primeiro pelo WhatsApp.',
+        ]}
+        notes="Cancelar libera o horário automaticamente pra outro cliente reservar."
+      />
 
       <div className="grid gap-3 md:grid-cols-4">
         <KPI label="Pedidos" value={String(stats.qtd)} />
@@ -276,7 +294,18 @@ function OrderRow({
       </td>
       <td className="px-3 py-2">
         <p className="font-medium text-primary-500">{order.customer.fullName}</p>
-        <p className="text-[11px] text-primary-500/60">{order.customer.phone}</p>
+        <a
+          href={`https://wa.me/55${order.customer.phone.replace(/\D/g, '')}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Abrir conversa no WhatsApp"
+          className="inline-flex items-center gap-1 text-[11px] text-emerald-600 hover:text-emerald-700"
+        >
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+            <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.74.45 3.43 1.32 4.93L2 22l5.32-1.4a9.92 9.92 0 0 0 4.72 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.13-2.9-7.01A9.83 9.83 0 0 0 12.04 2zm0 1.81c2.16 0 4.18.84 5.71 2.36a8.07 8.07 0 0 1 2.37 5.74c0 4.46-3.62 8.09-8.08 8.09-1.49 0-2.93-.4-4.18-1.15l-.3-.18-3.1.81.83-3.02-.2-.31a8.04 8.04 0 0 1-1.23-4.24c0-4.46 3.62-8.1 8.08-8.1z" />
+          </svg>
+          {order.customer.phone}
+        </a>
       </td>
       <td className="px-3 py-2 text-xs text-primary-500/70">
         {order.items.length}× ·{' '}
@@ -286,18 +315,58 @@ function OrderRow({
         R$ {order.total}
       </td>
       <td className="px-3 py-2 text-center">
-        <span
-          className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] ${CONFIRM_TONE[confirmation]}`}
-        >
-          {CONFIRM_LABEL[confirmation]}
-        </span>
+        {order.status === 'cancelado' ? (
+          <span
+            className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] ${CONFIRM_TONE[confirmation]}`}
+          >
+            {CONFIRM_LABEL[confirmation]}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() =>
+              onAction(
+                confirmation === 'pendente' ? 'confirmado' : 'pendente',
+              )
+            }
+            title={
+              confirmation === 'pendente'
+                ? 'Clique pra confirmar o pedido'
+                : 'Clique pra voltar para pendente'
+            }
+            className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] transition-colors hover:opacity-80 ${CONFIRM_TONE[confirmation]}`}
+          >
+            {CONFIRM_LABEL[confirmation]}
+          </button>
+        )}
       </td>
       <td className="px-3 py-2 text-center">
-        <span
-          className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] ${PAY_TONE[payment]}`}
-        >
-          {PAY_LABEL[payment]}
-        </span>
+        {order.status === 'cancelado' ? (
+          <span className="text-[11px] text-primary-500/40">—</span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirmation === 'pendente' && payment === 'pendente') {
+                if (
+                  !confirm(
+                    'Marcar como Recebido também confirma o pedido. Continuar?',
+                  )
+                )
+                  return;
+              }
+              onAction(payment === 'pendente' ? 'pago' : 'confirmado');
+            }}
+            title={
+              payment === 'pendente'
+                ? 'Clique pra marcar como recebido'
+                : 'Clique pra voltar para pendente de pagamento'
+            }
+            className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] transition-colors hover:opacity-80 ${PAY_TONE[payment]}`}
+          >
+            {PAY_LABEL[payment]}
+          </button>
+        )}
       </td>
       <td className="relative px-3 py-2 text-center">
         <button

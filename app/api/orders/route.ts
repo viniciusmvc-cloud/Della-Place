@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
+import webpush from 'web-push';
 import { badRequest, safeBody, serverError } from '@/lib/api-helpers';
-import { query, transaction } from '@/lib/db';
+import { execute, query, transaction } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -143,8 +144,87 @@ export async function POST(request: Request) {
       }
     });
 
+    notifyAdminsNewOrder({
+      customerName: body.customer.fullName,
+      total: body.total,
+      itemsCount: body.items.length,
+      date: body.date,
+      firstTime: body.items[0]?.time ?? null,
+    }).catch(() => {});
+
     return NextResponse.json({ ok: true, id: body.id }, { status: 201 });
   } catch (err) {
     return serverError(err);
   }
+}
+
+type AdminSub = {
+  id: number;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+};
+
+async function notifyAdminsNewOrder(payload: {
+  customerName: string;
+  total: number;
+  itemsCount: number;
+  date: string;
+  firstTime: string | null;
+}) {
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) return;
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:contato@dellapace.com.br',
+    publicKey,
+    privateKey,
+  );
+
+  const subs = await query<AdminSub>(
+    `SELECT id, endpoint, p256dh, auth
+       FROM push_subscriptions
+      WHERE active = 1 AND role = 'admin'`,
+  );
+  if (subs.length === 0) return;
+
+  const dateLabel = new Date(`${payload.date}T12:00:00`).toLocaleDateString(
+    'pt-BR',
+    { day: '2-digit', month: '2-digit' },
+  );
+  const body = JSON.stringify({
+    title: '🍕 Novo pedido na Della Pace',
+    body:
+      `${payload.customerName} reservou ${payload.itemsCount} pizza${payload.itemsCount > 1 ? 's' : ''}` +
+      ` para ${dateLabel}${payload.firstTime ? ` às ${payload.firstTime}` : ''}.` +
+      ` Total: R$ ${payload.total}.`,
+    url: '/admin/pedidos',
+    tag: 'new-order',
+  });
+
+  await Promise.all(
+    subs.map(async (s) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: s.endpoint,
+            keys: { p256dh: s.p256dh, auth: s.auth },
+          },
+          body,
+          { TTL: 60 * 60 * 6 },
+        );
+      } catch (err: unknown) {
+        const status =
+          err && typeof err === 'object' && 'statusCode' in err
+            ? Number((err as { statusCode: number }).statusCode)
+            : 0;
+        if (status === 404 || status === 410) {
+          await execute(
+            'UPDATE push_subscriptions SET active = 0 WHERE id = ?',
+            [s.id],
+          );
+        }
+      }
+    }),
+  );
 }

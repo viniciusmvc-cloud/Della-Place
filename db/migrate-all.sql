@@ -106,6 +106,11 @@ INSERT IGNORE INTO products (name, category, default_unit, notes) VALUES
 ALTER TABLE availability
   ADD COLUMN IF NOT EXISTS flavors_json TEXT DEFAULT NULL;
 
+-- ═══ v6: separação customer/admin nas push subscriptions ════════════
+
+ALTER TABLE push_subscriptions
+  ADD COLUMN IF NOT EXISTS role ENUM('customer','admin') NOT NULL DEFAULT 'customer';
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

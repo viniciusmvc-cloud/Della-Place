@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   fetchCustomers,
   fetchExpenses,
@@ -116,6 +117,19 @@ export default function AdminDashboard() {
         ⚠️ Modo demo — dados salvos neste navegador. No banco real (Onda 2),
         tudo aparece em tempo real para o Aurélio em qualquer dispositivo.
       </div>
+
+      <HelpBanner
+        id="dashboard"
+        title="Painel principal"
+        whenToFill="Você não preenche nada aqui. Esta tela só LÊ as informações lançadas em outras abas e mostra o resumo."
+        steps={[
+          'Use o seletor (Hoje / Semana / Mês / Tudo) no canto superior direito pra mudar o período.',
+          'Os 8 KPIs mostram faturamento, lucro, pedidos, pendências, custo de pizzas, despesas e sabor mais vendido.',
+          'O card "Próximos pedidos" lista os pedidos futuros em ordem cronológica de produção.',
+          'Se aparecer um banner amarelo "Encerrar ciclo", clique para fechar as compras de domingos passados.',
+        ]}
+        notes="Linha do tempo da semana: Cliente reserva (Pedidos) → Mise en place calcula o que comprar → Aurélio lança Compras → Domingo: produção → Encerrar ciclo decide o destino do que sobrou."
+      />
 
       {pendingClose.length > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">

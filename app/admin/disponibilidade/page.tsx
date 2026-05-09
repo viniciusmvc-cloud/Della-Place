@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   fetchAvailability,
   fetchCustomers,
@@ -173,6 +174,23 @@ export default function DisponibilidadePage() {
           qualquer data.
         </p>
       </header>
+
+      <HelpBanner
+        id="disponibilidade"
+        title="Disponibilidade"
+        whenToFill="Use sempre que decidir abrir um novo dia de produção ou ajustar uma data já aberta."
+        steps={[
+          'Clique no dia do calendário em que vai produzir.',
+          'No modal: defina horário de início (default 18:00), capacidade (quantas pizzas no total), e marque os sabores que vão aparecer pra reserva.',
+          'Salve. O dia fica verde e clientes começam a reservar pelo site.',
+          'Após abrir a data, use o botão "📣 Avisar clientes" pra mandar WhatsApp em massa ou push pra todos.',
+        ]}
+        doNot={[
+          'Não fechar uma data com pedidos confirmados sem avisar os clientes primeiro.',
+          'Não confunda capacity (pizzas no dia) com slots de horário (auto-gerados de 15 em 15 min).',
+        ]}
+        notes='Capacity é só um teto: o site não bloqueia automaticamente, mas serve como referência pro Aurélio acompanhar.'
+      />
 
       {savedNotice && (
         <p className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-center text-xs text-emerald-800">

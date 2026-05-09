@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   createProduct,
   deleteProduct,
@@ -169,6 +170,23 @@ export default function ProdutosPage() {
           Mostrar inativos
         </label>
       </header>
+
+      <HelpBanner
+        id="produtos"
+        title="Produtos"
+        whenToFill="Sempre que comprar um ingrediente NOVO que ainda não está no catálogo. Os 16 itens iniciais já vêm cadastrados."
+        steps={[
+          'Use a barra "Adicionar produto" pra cadastrar um ingrediente novo (ex: Burrata, Rúcula).',
+          'Escolha a categoria (Massa, Molho, Cobertura, Operação) e a unidade de medida padrão (kg, L, un, maço).',
+          'Pra editar um item existente, clique em "Editar".',
+          'Pra desativar (sem apagar histórico), use o ⊘. Pra apagar, use o 🗑.',
+        ]}
+        doNot={[
+          'Aqui é o CATÁLOGO de tipos. Não é onde você lança o que comprou de fato (isso vai em Compras).',
+          'Não cadastre o mesmo ingrediente em categorias diferentes só porque vai em pizzas diferentes. Categoria é por NATUREZA, não por receita.',
+        ]}
+        notes='Categoria de operação é pra itens transversais: sal, azeite, embalagens, etc.'
+      />
 
       {notice && (
         <p className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-center text-xs text-emerald-800">

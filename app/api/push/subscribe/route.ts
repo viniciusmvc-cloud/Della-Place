@@ -11,6 +11,7 @@ type SubscribeBody = {
   keys: { p256dh: string; auth: string };
   customerCpf?: string | null;
   userAgent?: string | null;
+  role?: 'customer' | 'admin';
 };
 
 function hashEndpoint(endpoint: string): string {
@@ -32,19 +33,29 @@ export async function POST(request: Request) {
     const endpointHash = hashEndpoint(body.endpoint);
     const cpf = body.customerCpf?.replace(/\D/g, '') || null;
     const ua = body.userAgent?.slice(0, 500) || null;
+    const role = body.role === 'admin' ? 'admin' : 'customer';
 
     await execute(
       `INSERT INTO push_subscriptions
-         (endpoint, endpoint_hash, p256dh, auth, customer_cpf, user_agent, active, last_used_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, NOW())
+         (endpoint, endpoint_hash, p256dh, auth, customer_cpf, user_agent, role, active, last_used_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())
        ON DUPLICATE KEY UPDATE
          p256dh = VALUES(p256dh),
          auth = VALUES(auth),
          customer_cpf = COALESCE(VALUES(customer_cpf), customer_cpf),
          user_agent = VALUES(user_agent),
+         role = VALUES(role),
          active = 1,
          last_used_at = NOW()`,
-      [body.endpoint, endpointHash, body.keys.p256dh, body.keys.auth, cpf, ua],
+      [
+        body.endpoint,
+        endpointHash,
+        body.keys.p256dh,
+        body.keys.auth,
+        cpf,
+        ua,
+        role,
+      ],
     );
 
     return NextResponse.json({ ok: true }, { status: 201 });

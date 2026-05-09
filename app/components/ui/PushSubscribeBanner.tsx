@@ -7,11 +7,16 @@ import {
   isDismissed,
   pushSupported,
   subscribeToPush,
+  type PushRole,
 } from '@/lib/push';
 
 type State = 'idle' | 'asking' | 'subscribed' | 'denied' | 'error';
 
-export default function PushSubscribeBanner() {
+export default function PushSubscribeBanner({
+  role = 'customer',
+}: {
+  role?: PushRole;
+} = {}) {
   const [visible, setVisible] = useState(false);
   const [state, setState] = useState<State>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +51,7 @@ export default function PushSubscribeBanner() {
         setError('Notificações não configuradas neste site.');
         return;
       }
-      const sub = await subscribeToPush(key);
+      const sub = await subscribeToPush(key, { role });
       if (sub) {
         setState('subscribed');
         dismiss();

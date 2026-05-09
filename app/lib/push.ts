@@ -57,9 +57,11 @@ export async function getCurrentSubscription(): Promise<PushSubscription | null>
   return await reg.pushManager.getSubscription();
 }
 
+export type PushRole = 'customer' | 'admin';
+
 export async function subscribeToPush(
   vapidPublicKey: string,
-  customerCpf?: string,
+  opts?: { customerCpf?: string; role?: PushRole },
 ): Promise<PushSubscription | null> {
   if (!pushSupported()) return null;
   const reg = await registerServiceWorker();
@@ -83,7 +85,8 @@ export async function subscribeToPush(
     body: JSON.stringify({
       endpoint: json.endpoint,
       keys: json.keys,
-      customerCpf: customerCpf || null,
+      customerCpf: opts?.customerCpf || null,
+      role: opts?.role ?? 'customer',
       userAgent:
         typeof navigator !== 'undefined' ? navigator.userAgent : null,
     }),

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   createPurchase,
   deletePurchase,
@@ -237,6 +238,24 @@ export default function ComprasPage() {
           </select>
         </div>
       </header>
+
+      <HelpBanner
+        id="compras"
+        title="Compras"
+        whenToFill="Sexta e sábado, conforme você for fazendo o mercado. Cada item comprado vira uma linha aqui."
+        steps={[
+          '1) Escolha o produto (vem da aba Produtos, agrupado por categoria).',
+          '2) Informe quantidade, valor pago e data da compra.',
+          '3) Confirme o "domingo de produção" (default = próximo domingo).',
+          '4) Clique "Adicionar compra".',
+          'Domingo à noite ou segunda: clique em "Encerrar ciclo" e diga o destino de cada compra (Acabou / Guardar / Pessoal / Descarte).',
+        ]}
+        doNot={[
+          'Não lance gás, luz, água, limpeza aqui. Esses vão em Financeiro como Despesas Operacionais.',
+          'Não esqueça de encerrar o ciclo. Sem isso, fica acumulando "Pendente" e atrapalha as métricas.',
+        ]}
+        notes='Itens marcados "Guardar" no encerramento aparecem na próxima semana como "Estoque carregado" no topo desta tela.'
+      />
 
       {pendingClose.length > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import { fetchAvailability } from '@/lib/api';
 import { formatDateBR, formatDateISO } from '@/lib/utils';
 
@@ -67,6 +68,22 @@ export default function MiseEnPlacePage() {
           a partir dos pedidos confirmados e das receitas do cardápio.
         </p>
       </header>
+
+      <HelpBanner
+        id="mise"
+        title="Mise en place"
+        whenToFill="Você não preenche nada aqui. É a lista de compras gerada automaticamente."
+        steps={[
+          'Escolha a data de produção no topo (geralmente o próximo domingo).',
+          'A tela mostra: total de pizzas reservadas + lista de ingredientes necessários.',
+          'Use essa lista pra fazer o mercado na sexta/sábado.',
+          'Depois de comprar, lance cada compra na aba "Compras".',
+        ]}
+        doNot={[
+          'Esta tela não desconta o que você já tem em estoque automaticamente. Ela mostra o NECESSÁRIO total. Compare com "Estoque carregado" da aba Compras.',
+        ]}
+        notes='Os números só aparecem se as receitas estiverem cadastradas no Cardápio (ingredientes vinculados ao Estoque).'
+      />
 
       <div className="rounded-xl border border-primary-100 bg-white p-4">
         <label className="block">

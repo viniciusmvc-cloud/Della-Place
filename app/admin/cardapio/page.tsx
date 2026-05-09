@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   createMenuItem,
   deleteMenuItem,
@@ -130,6 +131,23 @@ export default function CardapioPage() {
           + Adicionar sabor
         </button>
       </header>
+
+      <HelpBanner
+        id="cardapio"
+        title="Cardápio"
+        whenToFill="Sempre que quiser criar um sabor novo, alterar preço, descrição ou trocar a receita."
+        steps={[
+          'Clique "+ Adicionar sabor" pra criar um novo.',
+          'Clique no nome do sabor pra abrir o editor (nome, descrição, preço).',
+          'Adicione ingredientes da receita (vinculados ao Estoque) pra calcular o custo real automaticamente.',
+          'Use o botão Excluir pra remover um sabor que não vai mais oferecer.',
+          'Sabor inativo (toggle "ativo") fica salvo mas some do site público.',
+        ]}
+        doNot={[
+          'Aqui é o catálogo de SABORES (Marguerita, Calabria…), NÃO de ingredientes. Ingredientes vão em Produtos.',
+        ]}
+        notes='Margem >=50% verde, >=30% amarelo, abaixo vermelho. Use isso pra ajustar o preço.'
+      />
 
       {stock.length === 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

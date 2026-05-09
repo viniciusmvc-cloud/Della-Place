@@ -1,6 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import {
+  getCurrentSubscription,
+  pushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from '@/lib/push';
 
 type AdminUser = {
   id: number;
@@ -163,6 +169,8 @@ export default function ConfiguracoesPage() {
         onNotify={notify}
       />
 
+      <AdminPushSection onError={setError} onNotify={notify} />
+
       <section className="rounded-xl border border-primary-100 bg-white p-5">
         <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
           Adicionar administrador
@@ -292,6 +300,106 @@ export default function ConfiguracoesPage() {
         e peça pra ele te remover.
       </section>
     </div>
+  );
+}
+
+function AdminPushSection({
+  onError,
+  onNotify,
+}: {
+  onError: (msg: string | null) => void;
+  onNotify: (msg: string) => void;
+}) {
+  const [supported, setSupported] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!pushSupported()) return;
+    setSupported(true);
+    getCurrentSubscription().then((sub) => setSubscribed(!!sub));
+  }, []);
+
+  async function enable() {
+    onError(null);
+    setBusy(true);
+    try {
+      const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!key) {
+        onError('Push não configurado neste site.');
+        return;
+      }
+      const sub = await subscribeToPush(key, { role: 'admin' });
+      if (sub) {
+        setSubscribed(true);
+        onNotify('Avisos ativados neste dispositivo.');
+      } else {
+        onError(
+          'Permissão negada. Pra ativar, abra as configurações do navegador e permita notificações.',
+        );
+      }
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disable() {
+    onError(null);
+    setBusy(true);
+    try {
+      await unsubscribeFromPush();
+      setSubscribed(false);
+      onNotify('Avisos desativados neste dispositivo.');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-primary-100 bg-white p-5">
+      <h2 className="mb-2 text-sm font-medium uppercase tracking-widest text-primary-500/60">
+        Notificações de novos pedidos
+      </h2>
+      <p className="mb-3 text-sm text-primary-500/80">
+        Ative pra receber um aviso no celular toda vez que um cliente
+        reservar uma pizza. Funciona via PWA: instale primeiro o atalho do
+        admin (compartilhar → adicionar à tela inicial), abra ele, e ative
+        aqui.
+      </p>
+      {!supported ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+          Este navegador não suporta notificações push. Use Chrome (Android)
+          ou Safari (iOS 16.4+).
+        </p>
+      ) : subscribed ? (
+        <div className="flex items-center gap-3">
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-800">
+            ✓ Ativo neste dispositivo
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={disable}
+            className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70 hover:border-primary-500 disabled:opacity-50"
+          >
+            Desativar
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={enable}
+          className="rounded-full bg-primary-500 px-4 py-2 text-sm text-white disabled:opacity-50"
+        >
+          {busy ? 'Pedindo permissão…' : '🔔 Ativar avisos neste celular'}
+        </button>
+      )}
+    </section>
   );
 }
 

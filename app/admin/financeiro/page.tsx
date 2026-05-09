@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   createExpense,
   fetchExpenses,
@@ -131,6 +132,23 @@ export default function FinanceiroPage() {
           ))}
         </div>
       </header>
+
+      <HelpBanner
+        id="financeiro"
+        title="Financeiro"
+        whenToFill="Sempre que pagar uma conta operacional (gás, luz, água, limpeza, manutenção, transporte). Compras de ingredientes NÃO vão aqui."
+        steps={[
+          'Use "Adicionar despesa" pra registrar cada conta paga.',
+          'Escolha a categoria certa: Gás, Energia, Água, Limpeza, Manutenção, Transporte, etc.',
+          'Os KPIs no topo somam tudo: receita (de pedidos pagos), custo de pizzas (de Compras), despesas operacionais e lucro líquido.',
+          'Use o seletor de período pra ver Hoje / Semana / Mês / Tudo.',
+        ]}
+        doNot={[
+          'Ingredientes (farinha, mussarela, calabresa, etc) NÃO vão em despesa. Vão em Compras.',
+          'Pagamento de pedido NÃO se lança aqui. É automático quando você marca o pedido como "Recebido" em Pedidos.',
+        ]}
+        notes='Regra de bolso: se vira pizza, é Compras. Se faz a pizzaria funcionar, é Despesa.'
+      />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KPI label="Faturamento" value={`R$ ${revenue}`} tone="good" />
