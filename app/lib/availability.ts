@@ -3,6 +3,7 @@ export type AvailableDate = {
   capacity: number;
   startHour: string;
   notes?: string;
+  flavorIds?: string[];
 };
 
 export const DEFAULT_START_HOUR = '18:00';

@@ -206,9 +206,17 @@ export default function CardapioPage() {
                 <button
                   type="button"
                   onClick={() => setExpanded(isExpanded ? null : m.id)}
-                  className="text-xs text-primary-500/60 hover:text-primary-500"
+                  className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
                 >
                   {isExpanded ? '▲ recolher' : '▼ editar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(m.id)}
+                  className="rounded-full border border-rose-200 px-3 py-1 text-xs text-rose-600 hover:border-rose-500 hover:bg-rose-50"
+                  title="Excluir este sabor do cardápio"
+                >
+                  🗑 Excluir
                 </button>
               </div>
 
@@ -384,13 +392,20 @@ export default function CardapioPage() {
                     </div>
                   )}
 
-                  <div className="flex justify-end">
+                  <div className="flex justify-between border-t border-primary-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(null)}
+                      className="text-xs text-primary-500/60 hover:text-primary-500"
+                    >
+                      Recolher
+                    </button>
                     <button
                       type="button"
                       onClick={() => remove(m.id)}
-                      className="text-xs text-rose-600 hover:underline"
+                      className="rounded-full border border-rose-200 px-3 py-1 text-xs text-rose-600 hover:border-rose-500 hover:bg-rose-50"
                     >
-                      Remover sabor
+                      🗑 Excluir sabor permanentemente
                     </button>
                   </div>
                 </div>

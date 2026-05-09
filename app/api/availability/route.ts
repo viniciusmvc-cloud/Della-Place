@@ -10,7 +10,18 @@ type AvailabilityRow = {
   capacity: number;
   notes: string | null;
   start_hour: string | null;
+  flavors_json: string | null;
 };
+
+function parseFlavorIds(v: string | null): string[] {
+  if (!v) return [];
+  try {
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 function normalizeHour(v: unknown): string {
   if (typeof v !== 'string') return '18:00';
@@ -32,7 +43,7 @@ function dateToIso(d: Date | string): string {
 export async function GET() {
   try {
     const rows = await query<AvailabilityRow>(
-      'SELECT date, capacity, notes, start_hour FROM availability ORDER BY date',
+      'SELECT date, capacity, notes, start_hour, flavors_json FROM availability ORDER BY date',
     );
     return NextResponse.json(
       rows.map((a) => ({
@@ -40,6 +51,7 @@ export async function GET() {
         capacity: a.capacity,
         startHour: normalizeHour(a.start_hour),
         notes: a.notes ?? '',
+        flavorIds: parseFlavorIds(a.flavors_json),
       })),
     );
   } catch (err) {
@@ -54,17 +66,29 @@ export async function POST(request: Request) {
       capacity?: number;
       startHour?: string;
       notes?: string;
+      flavorIds?: string[];
     }>(request);
     if (!body || !body.date) return badRequest('Missing date');
     const startHour = normalizeHour(body.startHour ?? '18:00');
+    const flavorsJson =
+      Array.isArray(body.flavorIds) && body.flavorIds.length > 0
+        ? JSON.stringify(body.flavorIds.filter((x) => typeof x === 'string'))
+        : null;
     await execute(
-      `INSERT INTO availability (date, capacity, notes, start_hour)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO availability (date, capacity, notes, start_hour, flavors_json)
+       VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          capacity = VALUES(capacity),
          notes = VALUES(notes),
-         start_hour = VALUES(start_hour)`,
-      [body.date, body.capacity ?? 8, body.notes ?? null, `${startHour}:00`],
+         start_hour = VALUES(start_hour),
+         flavors_json = VALUES(flavors_json)`,
+      [
+        body.date,
+        body.capacity ?? 8,
+        body.notes ?? null,
+        `${startHour}:00`,
+        flavorsJson,
+      ],
     );
     return NextResponse.json({ ok: true, date: body.date }, { status: 201 });
   } catch (err) {

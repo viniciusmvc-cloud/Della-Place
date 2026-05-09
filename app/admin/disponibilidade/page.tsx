@@ -40,6 +40,7 @@ type Draft = {
   capacity: number;
   startHour: string;
   notes: string;
+  flavorIds: string[];
   exists: boolean;
 };
 
@@ -94,11 +95,16 @@ export default function DisponibilidadePage() {
     const iso = formatDateISO(date);
     const existing = byDate.get(iso);
     setError(null);
+    const allActiveIds = menu.map((x) => x.id);
     setDraft({
       date: iso,
       capacity: existing?.capacity ?? DEFAULT_CAPACITY,
       startHour: existing?.startHour ?? DEFAULT_START_HOUR,
       notes: existing?.notes ?? '',
+      flavorIds:
+        existing?.flavorIds && existing.flavorIds.length > 0
+          ? existing.flavorIds
+          : allActiveIds,
       exists: !!existing,
     });
   }
@@ -110,6 +116,10 @@ export default function DisponibilidadePage() {
       capacity: Math.max(1, draft.capacity),
       startHour: draft.startHour,
       notes: draft.notes,
+      flavorIds:
+        draft.flavorIds.length === menu.length || draft.flavorIds.length === 0
+          ? []
+          : draft.flavorIds,
     };
     try {
       await upsertAvailability(payload);
@@ -323,6 +333,7 @@ export default function DisponibilidadePage() {
       {draft && (
         <DayModal
           draft={draft}
+          menu={menu}
           onChange={setDraft}
           onSave={saveDraft}
           onClose={() => {
@@ -606,6 +617,7 @@ function BroadcastSheet({
 
 function DayModal({
   draft,
+  menu,
   onChange,
   onSave,
   onClose,
@@ -613,6 +625,7 @@ function DayModal({
   error,
 }: {
   draft: Draft;
+  menu: MenuItem[];
   onChange: (d: Draft) => void;
   onSave: () => void;
   onClose: () => void;
@@ -620,6 +633,22 @@ function DayModal({
   error: string | null;
 }) {
   const dateLabel = formatDateBR(new Date(`${draft.date}T12:00:00`));
+
+  function toggleFlavor(id: string) {
+    const has = draft.flavorIds.includes(id);
+    onChange({
+      ...draft,
+      flavorIds: has
+        ? draft.flavorIds.filter((x) => x !== id)
+        : [...draft.flavorIds, id],
+    });
+  }
+  function selectAll() {
+    onChange({ ...draft, flavorIds: menu.map((m) => m.id) });
+  }
+  function clearAll() {
+    onChange({ ...draft, flavorIds: [] });
+  }
 
   return (
     <div
@@ -630,7 +659,7 @@ function DayModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-primary-100 bg-white p-6 shadow-xl"
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-primary-100 bg-white p-6 shadow-xl"
       >
         <header className="mb-4">
           <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
@@ -644,7 +673,7 @@ function DayModal({
           </h2>
         </header>
 
-        <div className="space-y-4">
+        <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
           <label className="block">
             <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
               Horário do primeiro pedido
@@ -691,6 +720,64 @@ function DayModal({
               className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
             />
           </label>
+
+          <div className="rounded-lg border border-primary-100 bg-primary-50/30 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                Sabores ativos nessa edição
+              </span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={selectAll}
+                  className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] text-primary-500/70 hover:border-primary-500"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] text-primary-500/70 hover:border-primary-500"
+                >
+                  Nenhum
+                </button>
+              </div>
+            </div>
+            {menu.length === 0 ? (
+              <p className="text-[11px] text-primary-500/60">
+                Nenhum sabor ativo no Cardápio. Adicione sabores em Cardápio
+                primeiro.
+              </p>
+            ) : (
+              <ul className="grid grid-cols-2 gap-1.5">
+                {menu.map((m) => {
+                  const checked = draft.flavorIds.includes(m.id);
+                  return (
+                    <li key={m.id}>
+                      <label
+                        className={
+                          checked
+                            ? 'flex cursor-pointer items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900'
+                            : 'flex cursor-pointer items-center gap-2 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-xs text-primary-500/70'
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleFlavor(m.id)}
+                        />
+                        <span className="truncate">{m.name}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <p className="mt-2 text-[10px] text-primary-500/50">
+              Marque os sabores que vão aparecer pra reserva neste dia. Se
+              todos estiverem marcados, o site mostra o cardápio completo.
+            </p>
+          </div>
 
           {error && (
             <p className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">

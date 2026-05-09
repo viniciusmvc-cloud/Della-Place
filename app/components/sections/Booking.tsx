@@ -94,6 +94,7 @@ export default function Booking() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [startHourByDate, setStartHourByDate] = useState<Record<string, string>>({});
+  const [flavorsByDate, setFlavorsByDate] = useState<Record<string, string[]>>({});
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   const [lookupMessage, setLookupMessage] = useState<
@@ -118,14 +119,20 @@ export default function Booking() {
         setAvailableDates(
           futureAv.map((a) => new Date(`${a.date}T12:00:00`)),
         );
-        const map: Record<string, string> = {};
+        const hourMap: Record<string, string> = {};
+        const flavorMap: Record<string, string[]> = {};
         futureAv.forEach((a) => {
-          map[a.date] = a.startHour ?? '18:00';
+          hourMap[a.date] = a.startHour ?? '18:00';
+          if (a.flavorIds && a.flavorIds.length > 0) {
+            flavorMap[a.date] = a.flavorIds;
+          }
         });
-        setStartHourByDate(map);
+        setStartHourByDate(hourMap);
+        setFlavorsByDate(flavorMap);
       } else {
         setAvailableDates(nextSundays(8));
         setStartHourByDate({});
+        setFlavorsByDate({});
       }
     });
   }, []);
@@ -172,6 +179,21 @@ export default function Booking() {
     const startHour = (iso && startHourByDate[iso]) || '18:00';
     return generateSlotsFrom(startHour);
   }, [date, startHourByDate]);
+
+  const visibleMenu = useMemo(() => {
+    const iso = date ? formatDateISO(date) : null;
+    const allowed = iso ? flavorsByDate[iso] : null;
+    if (!allowed || allowed.length === 0) return menu;
+    const allowedSet = new Set(allowed);
+    return menu.filter((m) => allowedSet.has(m.id));
+  }, [menu, date, flavorsByDate]);
+
+  useEffect(() => {
+    if (visibleMenu.length === 0) return;
+    if (!visibleMenu.some((m) => m.name === stagingFlavor)) {
+      setStagingFlavor(visibleMenu[0].name);
+    }
+  }, [visibleMenu, stagingFlavor]);
 
   useEffect(() => {
     if (!date) {
@@ -567,9 +589,9 @@ export default function Booking() {
                           onChange={(e) => setStagingFlavor(e.target.value)}
                           className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm text-primary-500"
                         >
-                          {menu.map((f) => (
+                          {visibleMenu.map((f) => (
                             <option key={f.id} value={f.name}>
-                              {f.name} — R$ {f.price}
+                              {f.name} · R$ {f.price}
                             </option>
                           ))}
                         </select>
