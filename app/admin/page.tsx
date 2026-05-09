@@ -7,10 +7,13 @@ import {
   fetchExpenses,
   fetchMenu,
   fetchOrders,
+  fetchPurchases,
 } from '@/lib/api';
 import { type Expense } from '@/lib/expenses';
 import { type MenuItem } from '@/lib/menu';
 import { type Order, type StoredCustomer } from '@/lib/orders';
+import { type Purchase } from '@/lib/purchases';
+import { formatDateBR } from '@/lib/utils';
 import {
   PERIODS,
   PERIOD_LABEL,
@@ -24,6 +27,7 @@ export default function AdminDashboard() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [pendingClose, setPendingClose] = useState<Purchase[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -31,11 +35,13 @@ export default function AdminDashboard() {
       fetchExpenses().catch(() => []),
       fetchCustomers().catch(() => []),
       fetchMenu().catch(() => []),
-    ]).then(([o, e, c, m]) => {
+      fetchPurchases({ pendingClose: true }).catch(() => []),
+    ]).then(([o, e, c, m, pc]) => {
       setOrders(o);
       setExpenses(e);
       setCustomers(c);
       setMenu(m);
+      setPendingClose(pc);
     });
   }, []);
 
@@ -110,6 +116,44 @@ export default function AdminDashboard() {
         ⚠️ Modo demo — dados salvos neste navegador. No banco real (Onda 2),
         tudo aparece em tempo real para o Aurélio em qualquer dispositivo.
       </div>
+
+      {pendingClose.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-amber-900">
+                ⏰ Encerrar ciclo de produção
+              </p>
+              <p className="mt-1 text-xs text-amber-900/80">
+                {pendingClose.length}{' '}
+                {pendingClose.length === 1 ? 'compra' : 'compras'} de
+                domingo(s) já passados aguardando você decidir o destino.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Array.from(
+                new Set(pendingClose.map((p) => p.productionDate)),
+              )
+                .sort()
+                .map((d) => {
+                  const count = pendingClose.filter(
+                    (p) => p.productionDate === d,
+                  ).length;
+                  return (
+                    <Link
+                      key={d}
+                      href={`/admin/compras/encerrar/${d}`}
+                      className="rounded-full bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
+                    >
+                      Encerrar{' '}
+                      {formatDateBR(new Date(`${d}T12:00:00`))} ({count})
+                    </Link>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Faturamento" value={`R$ ${revenue}`} hint="pagos no período" />

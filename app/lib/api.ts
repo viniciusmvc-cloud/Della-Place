@@ -2,6 +2,11 @@ import type { Expense } from '@/lib/expenses';
 import type { MenuItem, RecipeIngredient } from '@/lib/menu';
 import type { Order, OrderStatus, StoredCustomer } from '@/lib/orders';
 import type { Product, ProductInput } from '@/lib/products';
+import type {
+  Purchase,
+  PurchaseInput,
+  PurchaseStatus,
+} from '@/lib/purchases';
 import type { StockItem } from '@/lib/stock';
 import type { AvailableDate } from '@/lib/availability';
 
@@ -216,6 +221,40 @@ export function deleteProduct(id: number) {
     `/api/products/${id}`,
     { method: 'DELETE' },
   );
+}
+
+// ─── Purchases (compras / ciclo) ────────────────────────
+export function fetchPurchases(params?: {
+  status?: PurchaseStatus;
+  productionDate?: string;
+  pendingClose?: boolean;
+  carryover?: boolean;
+}): Promise<Purchase[]> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set('status', params.status);
+  if (params?.productionDate) qs.set('productionDate', params.productionDate);
+  if (params?.pendingClose) qs.set('pendingClose', '1');
+  if (params?.carryover) qs.set('carryover', '1');
+  const tail = qs.toString();
+  return apiFetch<Purchase[]>(`/api/purchases${tail ? `?${tail}` : ''}`);
+}
+export function createPurchase(p: PurchaseInput) {
+  return apiFetch<{ ok: boolean; id: number }>('/api/purchases', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  });
+}
+export function updatePurchase(
+  id: number,
+  patch: Partial<PurchaseInput> & { status?: PurchaseStatus },
+) {
+  return apiFetch(`/api/purchases/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+export function deletePurchase(id: number) {
+  return apiFetch(`/api/purchases/${id}`, { method: 'DELETE' });
 }
 
 // ─── Push notifications ─────────────────────────────────
