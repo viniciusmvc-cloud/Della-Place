@@ -3,7 +3,15 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { use, useEffect, useMemo, useState } from 'react';
-import { fetchPurchases, updatePurchase } from '@/lib/api';
+import {
+  fetchExpenses,
+  fetchOrders,
+  fetchPurchases,
+  setOrderStatus,
+  updatePurchase,
+} from '@/lib/api';
+import { type Expense } from '@/lib/expenses';
+import { type Order } from '@/lib/orders';
 import { CATEGORY_LABEL, type ProductCategory } from '@/lib/products';
 import {
   STATUS_HINT,
@@ -60,15 +68,24 @@ export default function EncerrarPage({
   const { date } = use(params);
   const router = useRouter();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function reload() {
     setLoading(true);
     try {
-      const list = await fetchPurchases({ productionDate: date });
-      setPurchases(list);
+      const [purchaseList, allOrders, allExpenses] = await Promise.all([
+        fetchPurchases({ productionDate: date }),
+        fetchOrders().catch(() => []),
+        fetchExpenses().catch(() => []),
+      ]);
+      setPurchases(purchaseList);
+      setOrders(allOrders.filter((o) => o.date === date));
+      setExpenses(allExpenses.filter((e) => e.date === date));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -97,6 +114,50 @@ export default function EncerrarPage({
     });
     return t;
   }, [purchases]);
+
+  // ─── Pendências de pagamento e resumo financeiro ───
+  const pendingPayments = useMemo(
+    () =>
+      orders.filter(
+        (o) => o.status === 'pendente' || o.status === 'confirmado',
+      ),
+    [orders],
+  );
+  const paidOrders = useMemo(
+    () => orders.filter((o) => o.status === 'pago'),
+    [orders],
+  );
+  const cancelledOrders = useMemo(
+    () => orders.filter((o) => o.status === 'cancelado'),
+    [orders],
+  );
+
+  const financial = useMemo(() => {
+    const receita = paidOrders.reduce((s, o) => s + o.total, 0);
+    const aReceber = pendingPayments.reduce((s, o) => s + o.total, 0);
+    // Custo de produção: usado (foi pra pizza). Guardado vira ativo, não custo do ciclo.
+    const custoProducao = totals.used;
+    // Prejuízo: pessoal e descarte (compras que não viraram receita)
+    const prejuizo = totals.personal + totals.discarded;
+    const despesasOp = expenses.reduce((s, e) => s + e.amount, 0);
+    const lucro = receita - custoProducao - prejuizo - despesasOp;
+    return { receita, aReceber, custoProducao, prejuizo, despesasOp, lucro };
+  }, [paidOrders, pendingPayments, totals, expenses]);
+
+  const canCloseCycle =
+    pending.length === 0 && pendingPayments.length === 0;
+
+  async function markOrderPaid(o: Order) {
+    setBusyOrderId(o.id);
+    try {
+      await setOrderStatus(o.id, 'pago');
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyOrderId(null);
+    }
+  }
 
   async function decide(p: Purchase, status: PurchaseStatus) {
     setBusyId(p.id);
@@ -283,6 +344,168 @@ export default function EncerrarPage({
           </ul>
         </section>
       )}
+
+      {/* ─── ENCERRAMENTO FINANCEIRO ─────────────────────────────── */}
+      <section className="space-y-4 rounded-2xl border-2 border-primary-300 bg-primary-50/30 p-5">
+        <header>
+          <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+            Encerramento financeiro
+          </p>
+          <h2
+            className="text-2xl italic text-primary-500"
+            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+          >
+            Encontro de contas · {dateLabel}
+          </h2>
+        </header>
+
+        {/* Pendências de pagamento */}
+        <div className="rounded-xl border border-primary-100 bg-white p-4">
+          <p className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-primary-500/70">
+            💰 Pagamentos do dia
+            {pendingPayments.length > 0 ? (
+              <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] text-rose-700">
+                {pendingPayments.length} a receber
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700">
+                tudo recebido ✓
+              </span>
+            )}
+          </p>
+          {pendingPayments.length > 0 ? (
+            <ul className="space-y-1.5">
+              {pendingPayments.map((o) => (
+                <li
+                  key={o.id}
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-rose-100 bg-rose-50/40 px-3 py-1.5 text-xs"
+                >
+                  <span className="flex-1 text-primary-500/85">
+                    <strong className="text-primary-500">
+                      {o.customer.fullName}
+                    </strong>{' '}
+                    · {o.items.length} pizza
+                    {o.items.length > 1 ? 's' : ''} · R$ {o.total}
+                    <a
+                      href={`https://wa.me/55${o.customer.phone.replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-emerald-600 hover:underline"
+                    >
+                      cobrar via WhatsApp
+                    </a>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busyOrderId === o.id}
+                    onClick={() => markOrderPaid(o)}
+                    className="rounded-full bg-emerald-500 px-3 py-1 text-[11px] text-white hover:bg-emerald-600 disabled:opacity-50"
+                  >
+                    ✓ Recebi
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-primary-500/60">
+              Nenhum pedido pendente de pagamento neste ciclo.
+            </p>
+          )}
+        </div>
+
+        {/* Resumo financeiro */}
+        <div className="grid gap-3 md:grid-cols-3">
+          <KPI
+            label="Receita (recebido)"
+            value={`R$ ${financial.receita.toFixed(2)}`}
+            tone="good"
+          />
+          <KPI
+            label="A receber"
+            value={`R$ ${financial.aReceber.toFixed(2)}`}
+            tone={financial.aReceber > 0 ? 'warn' : undefined}
+          />
+          <KPI
+            label="Custo de produção"
+            value={`R$ ${financial.custoProducao.toFixed(2)}`}
+          />
+          <KPI
+            label="Prejuízo (pessoal+descarte)"
+            value={`R$ ${financial.prejuizo.toFixed(2)}`}
+            tone={financial.prejuizo > 0 ? 'bad' : undefined}
+          />
+          <KPI
+            label="Despesas operacionais"
+            value={`R$ ${financial.despesasOp.toFixed(2)}`}
+          />
+          <KPI
+            label="Lucro líquido"
+            value={`R$ ${financial.lucro.toFixed(2)}`}
+            tone={financial.lucro >= 0 ? 'good' : 'bad'}
+          />
+        </div>
+
+        {paidOrders.length + cancelledOrders.length > 0 && (
+          <p className="text-[11px] text-primary-500/60">
+            {paidOrders.length} pedido{paidOrders.length === 1 ? '' : 's'} pago
+            {paidOrders.length === 1 ? '' : 's'}
+            {cancelledOrders.length > 0 &&
+              ` · ${cancelledOrders.length} cancelado${cancelledOrders.length === 1 ? '' : 's'}`}
+            .
+          </p>
+        )}
+
+        {/* Pendências bloqueando o encerramento */}
+        {!canCloseCycle && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <p className="mb-2 text-sm font-medium text-amber-900">
+              ⚠️ Não dá pra encerrar o ciclo ainda. Pendências:
+            </p>
+            <ul className="ml-4 list-disc text-xs text-amber-900/85">
+              {pending.length > 0 && (
+                <li>
+                  {pending.length}{' '}
+                  {pending.length === 1 ? 'compra' : 'compras'} sem destino
+                  decidido (acima).
+                </li>
+              )}
+              {pendingPayments.length > 0 && (
+                <li>
+                  {pendingPayments.length}{' '}
+                  {pendingPayments.length === 1 ? 'pedido' : 'pedidos'}{' '}
+                  aguardando pagamento.
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={!canCloseCycle}
+          onClick={() => {
+            if (!canCloseCycle) return;
+            alert(
+              `Ciclo de ${dateLabel} encerrado!\n\n` +
+                `Receita: R$ ${financial.receita.toFixed(2)}\n` +
+                `Custo de produção: R$ ${financial.custoProducao.toFixed(2)}\n` +
+                `Prejuízo: R$ ${financial.prejuizo.toFixed(2)}\n` +
+                `Despesas: R$ ${financial.despesasOp.toFixed(2)}\n` +
+                `Lucro líquido: R$ ${financial.lucro.toFixed(2)}`,
+            );
+            done();
+          }}
+          className={
+            canCloseCycle
+              ? 'w-full rounded-full bg-emerald-500 px-5 py-3 text-sm font-medium text-white hover:bg-emerald-600'
+              : 'w-full cursor-not-allowed rounded-full bg-primary-200 px-5 py-3 text-sm text-primary-500/60'
+          }
+        >
+          {canCloseCycle
+            ? `✓ Confirmar encerramento do ciclo · Lucro R$ ${financial.lucro.toFixed(2)}`
+            : `🔒 Resolva as pendências acima pra encerrar`}
+        </button>
+      </section>
     </div>
   );
 }
