@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import HelpBanner from '@/components/admin/HelpBanner';
 import {
-  fetchCustomers,
   fetchExpenses,
   fetchMenu,
   fetchOrders,
@@ -12,7 +11,7 @@ import {
 } from '@/lib/api';
 import { type Expense } from '@/lib/expenses';
 import { type MenuItem } from '@/lib/menu';
-import { type Order, type StoredCustomer } from '@/lib/orders';
+import { type Order } from '@/lib/orders';
 import { type Purchase } from '@/lib/purchases';
 import { formatDateBR } from '@/lib/utils';
 import {
@@ -26,23 +25,20 @@ export default function AdminDashboard() {
   const [period, setPeriod] = useState<Period>('month');
   const [orders, setOrders] = useState<Order[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
-  const [pendingClose, setPendingClose] = useState<Purchase[]>([]);
+  const [allPurchases, setAllPurchases] = useState<Purchase[]>([]);
 
   useEffect(() => {
     Promise.all([
       fetchOrders().catch(() => []),
       fetchExpenses().catch(() => []),
-      fetchCustomers().catch(() => []),
       fetchMenu().catch(() => []),
-      fetchPurchases({ pendingClose: true }).catch(() => []),
-    ]).then(([o, e, c, m, pc]) => {
+      fetchPurchases().catch(() => []),
+    ]).then(([o, e, m, ps]) => {
       setOrders(o);
       setExpenses(e);
-      setCustomers(c);
       setMenu(m);
-      setPendingClose(pc);
+      setAllPurchases(ps);
     });
   }, []);
 
@@ -81,21 +77,6 @@ export default function AdminDashboard() {
     return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
   })();
 
-  const today = new Date().toISOString().slice(0, 10);
-  const upcoming = [...orders]
-    .filter(
-      (o) =>
-        (o.status === 'pendente' || o.status === 'confirmado') &&
-        o.date >= today,
-    )
-    .sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      const at = a.items[0]?.time ?? '00:00';
-      const bt = b.items[0]?.time ?? '00:00';
-      return at.localeCompare(bt);
-    })
-    .slice(0, 6);
-
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -131,43 +112,10 @@ export default function AdminDashboard() {
         notes="Linha do tempo da semana: Cliente reserva (Pedidos) → Mise en place calcula o que comprar → Aurélio lança Compras → Domingo: produção → Encerrar ciclo decide o destino do que sobrou."
       />
 
-      {pendingClose.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-amber-900">
-                ⏰ Encerrar ciclo de produção
-              </p>
-              <p className="mt-1 text-xs text-amber-900/80">
-                {pendingClose.length}{' '}
-                {pendingClose.length === 1 ? 'compra' : 'compras'} de
-                domingo(s) já passados aguardando você decidir o destino.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Array.from(
-                new Set(pendingClose.map((p) => p.productionDate)),
-              )
-                .sort()
-                .map((d) => {
-                  const count = pendingClose.filter(
-                    (p) => p.productionDate === d,
-                  ).length;
-                  return (
-                    <Link
-                      key={d}
-                      href={`/admin/compras/encerrar/${d}`}
-                      className="rounded-full bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
-                    >
-                      Encerrar{' '}
-                      {formatDateBR(new Date(`${d}T12:00:00`))} ({count})
-                    </Link>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
+      <CycleClosingWidget
+        purchases={allPurchases}
+        orders={orders}
+      />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Faturamento" value={`R$ ${revenue}`} hint="pagos no período" />
@@ -189,135 +137,215 @@ export default function AdminDashboard() {
         <Stat label="Sabor top" value={topFlavor} hint="mais vendido no período" />
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <Card title="Próximos pedidos">
-          {upcoming.length === 0 ? (
-            <p className="text-sm text-primary-500/60">
-              Nenhum pedido futuro. Quando clientes reservarem, eles aparecem
-              aqui em ordem cronológica de produção.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {upcoming.map((o) => (
-                <li
-                  key={o.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-primary-100 bg-white p-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="rounded bg-primary-500 px-2 py-0.5 text-[11px] text-white"
-                      style={{
-                        fontFamily: 'var(--font-cormorant), Georgia, serif',
-                      }}
-                    >
-                      {o.items[0]?.time ?? '—'}
-                    </span>
-                    <span className="flex flex-col leading-tight">
-                      <span className="text-primary-500">
-                        {o.customer.fullName}
-                      </span>
-                      <span className="text-[10px] text-primary-500/60">
-                        {new Date(`${o.date}T12:00:00`).toLocaleDateString('pt-BR')}
-                        {' · '}
-                        {o.items.length}× pizza
-                      </span>
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-2 text-xs">
-                    <span className="text-primary-500/60">R$ {o.total}</span>
-                    <StatusBadge status={o.status} />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Link
-            href="/admin/pedidos"
-            className="mt-3 inline-block text-xs text-primary-500/70 hover:text-primary-500"
-          >
-            Ver todos →
-          </Link>
-        </Card>
-
-        <Card title="Top clientes">
-          {customers.length === 0 ? (
-            <p className="text-sm text-primary-500/60">
-              Nenhum cliente cadastrado ainda.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {customers.slice(0, 5).map((c) => {
-                const cOrders = orders.filter((o) => o.customer.cpf === c.cpf);
-                const totalSpent = cOrders
-                  .filter((o) => o.status === 'pago')
-                  .reduce((s, o) => s + o.total, 0);
-                return (
-                  <li
-                    key={c.cpf}
-                    className="flex items-center justify-between rounded-md border border-primary-100 bg-white p-2 text-sm"
-                  >
-                    <span className="text-primary-500">{c.fullName}</span>
-                    <span className="text-xs text-primary-500/60">
-                      {cOrders.length} pedidos · R$ {totalSpent}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <Link
-            href="/admin/clientes"
-            className="mt-3 inline-block text-xs text-primary-500/70 hover:text-primary-500"
-          >
-            Ver todos →
-          </Link>
-        </Card>
-
-        <Card title="Distribuição de sabores">
-          {(() => {
-            const c: Record<string, number> = {};
-            inPeriodOrders
-              .filter((o) => o.status !== 'cancelado')
-              .forEach((o) =>
-                o.items.forEach(
-                  (it) => (c[it.flavor] = (c[it.flavor] || 0) + 1),
-                ),
-              );
-            const entries = Object.entries(c).sort((a, b) => b[1] - a[1]);
-            const total = entries.reduce((s, [, n]) => s + n, 0);
-            if (total === 0)
-              return (
-                <p className="text-sm text-primary-500/60">
-                  Sem dados no período.
-                </p>
-              );
-            return (
-              <ul className="space-y-2">
-                {entries.map(([name, n]) => {
-                  const pct = (n / total) * 100;
-                  return (
-                    <li key={name}>
-                      <div className="mb-1 flex justify-between text-xs">
-                        <span className="text-primary-500">{name}</span>
-                        <span className="text-primary-500/60">
-                          {n} · {pct.toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-primary-100">
-                        <div
-                          className="h-full bg-primary-500"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            );
-          })()}
-        </Card>
-      </section>
     </div>
+  );
+}
+
+function CycleClosingWidget({
+  purchases,
+  orders,
+}: {
+  purchases: Purchase[];
+  orders: Order[];
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Datas com pendência: agrupa por production_date
+  const dateBuckets = new Map<
+    string,
+    {
+      stockPending: number;
+      stockPendingValue: number;
+      paymentPending: number;
+      paymentPendingValue: number;
+    }
+  >();
+
+  purchases
+    .filter((p) => p.status === 'pending')
+    .forEach((p) => {
+      const e = dateBuckets.get(p.productionDate) ?? {
+        stockPending: 0,
+        stockPendingValue: 0,
+        paymentPending: 0,
+        paymentPendingValue: 0,
+      };
+      e.stockPending += 1;
+      e.stockPendingValue += p.totalCost;
+      dateBuckets.set(p.productionDate, e);
+    });
+
+  orders
+    .filter((o) => o.status === 'pendente' || o.status === 'confirmado')
+    .forEach((o) => {
+      const e = dateBuckets.get(o.date) ?? {
+        stockPending: 0,
+        stockPendingValue: 0,
+        paymentPending: 0,
+        paymentPendingValue: 0,
+      };
+      e.paymentPending += 1;
+      e.paymentPendingValue += o.total;
+      dateBuckets.set(o.date, e);
+    });
+
+  // Pega a data com pendências mais antiga (urgente primeiro)
+  const dates = Array.from(dateBuckets.entries())
+    .filter(([, v]) => v.stockPending > 0 || v.paymentPending > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  if (dates.length === 0) {
+    return (
+      <section className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/40 p-5">
+        <p className="text-3xl text-emerald-600">✓</p>
+        <p
+          className="mt-1 text-xl italic text-primary-500"
+          style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+        >
+          Nenhum ciclo a encerrar
+        </p>
+        <p className="mt-1 text-xs text-primary-500/70">
+          Tudo em dia. Quando você lançar compras ou clientes reservarem,
+          eles aparecem aqui pra fechamento.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      {dates.map(([date, b]) => {
+        const isPast = date <= today;
+        const dateLabel = formatDateBR(new Date(`${date}T12:00:00`));
+        const canClose = b.stockPending === 0 && b.paymentPending === 0;
+        return (
+          <div
+            key={date}
+            className={`rounded-2xl border-2 p-5 ${
+              isPast
+                ? 'border-amber-300 bg-amber-50/40'
+                : 'border-primary-300 bg-primary-50/40'
+            }`}
+          >
+            <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                  {isPast ? '⏰ Encerrar ciclo' : 'Ciclo em curso'}
+                </p>
+                <h2
+                  className="text-2xl italic text-primary-500"
+                  style={{
+                    fontFamily: 'var(--font-cormorant), Georgia, serif',
+                  }}
+                >
+                  Domingo · {dateLabel}
+                </h2>
+              </div>
+              {canClose && (
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-800">
+                  ✓ Pronto pra encerrar
+                </span>
+              )}
+            </header>
+
+            <div className="mb-4 grid gap-3 md:grid-cols-2">
+              <Link
+                href={`/admin/compras/encerrar/${date}`}
+                className={`flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:shadow-md ${
+                  b.stockPending === 0
+                    ? 'border-emerald-300 bg-white'
+                    : 'border-amber-300 bg-white'
+                }`}
+              >
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                    1️⃣ Estoque
+                  </p>
+                  <p
+                    className="text-2xl text-primary-500"
+                    style={{
+                      fontFamily:
+                        'var(--font-cormorant), Georgia, serif',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {b.stockPending === 0 ? (
+                      <span className="text-emerald-600">✓ Encerrado</span>
+                    ) : (
+                      <>
+                        {b.stockPending}{' '}
+                        <span className="text-sm font-normal text-primary-500/70">
+                          {b.stockPending === 1 ? 'compra' : 'compras'} sem destino
+                        </span>
+                      </>
+                    )}
+                  </p>
+                  {b.stockPending > 0 && (
+                    <p className="text-xs text-primary-500/70">
+                      R$ {b.stockPendingValue.toFixed(2)} pra decidir
+                    </p>
+                  )}
+                </div>
+                <span className="text-2xl text-primary-500/40">→</span>
+              </Link>
+
+              <Link
+                href={`/admin/compras/encerrar/${date}`}
+                className={`flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:shadow-md ${
+                  b.paymentPending === 0
+                    ? 'border-emerald-300 bg-white'
+                    : 'border-rose-300 bg-white'
+                }`}
+              >
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                    2️⃣ Pagamentos
+                  </p>
+                  <p
+                    className="text-2xl text-primary-500"
+                    style={{
+                      fontFamily:
+                        'var(--font-cormorant), Georgia, serif',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {b.paymentPending === 0 ? (
+                      <span className="text-emerald-600">✓ Tudo recebido</span>
+                    ) : (
+                      <>
+                        {b.paymentPending}{' '}
+                        <span className="text-sm font-normal text-primary-500/70">
+                          {b.paymentPending === 1 ? 'pedido' : 'pedidos'} a receber
+                        </span>
+                      </>
+                    )}
+                  </p>
+                  {b.paymentPending > 0 && (
+                    <p className="text-xs text-primary-500/70">
+                      R$ {b.paymentPendingValue.toFixed(2)} a cobrar
+                    </p>
+                  )}
+                </div>
+                <span className="text-2xl text-primary-500/40">→</span>
+              </Link>
+            </div>
+
+            <Link
+              href={`/admin/compras/encerrar/${date}`}
+              className={
+                canClose
+                  ? 'block w-full rounded-full bg-emerald-500 px-5 py-3 text-center text-sm font-medium text-white hover:bg-emerald-600'
+                  : 'block w-full rounded-full bg-amber-500 px-5 py-3 text-center text-sm font-medium text-white hover:bg-amber-600'
+              }
+            >
+              {canClose
+                ? `✓ Confirmar encerramento de ${dateLabel}`
+                : `→ Resolver pendências de ${dateLabel}`}
+            </Link>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
@@ -386,29 +414,3 @@ function Stat({
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-primary-100 bg-white p-5 shadow-sm">
-      <h3 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
-        {title}
-      </h3>
-      {children}
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    pendente: 'bg-amber-100 text-amber-800',
-    confirmado: 'bg-blue-100 text-blue-800',
-    pago: 'bg-emerald-100 text-emerald-800',
-    cancelado: 'bg-rose-100 text-rose-800',
-  };
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[10px] ${map[status] ?? 'bg-primary-100 text-primary-700'}`}
-    >
-      {status}
-    </span>
-  );
-}

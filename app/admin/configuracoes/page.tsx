@@ -171,6 +171,8 @@ export default function ConfiguracoesPage() {
 
       <AdminPushSection onError={setError} onNotify={notify} />
 
+      <CleanupSection onError={setError} onNotify={notify} />
+
       <section className="rounded-xl border border-primary-100 bg-white p-5">
         <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
           Adicionar administrador
@@ -300,6 +302,161 @@ export default function ConfiguracoesPage() {
         e peça pra ele te remover.
       </section>
     </div>
+  );
+}
+
+const CLEANUP_OPTIONS: Array<{ key: string; label: string; warn?: string }> = [
+  { key: 'orders', label: 'Pedidos (orders + order_items)' },
+  { key: 'customers', label: 'Clientes' },
+  { key: 'purchases', label: 'Compras' },
+  { key: 'expenses', label: 'Despesas operacionais' },
+  { key: 'community_posts', label: 'Posts da comunidade' },
+  { key: 'customer_suggestions', label: 'Sugestões' },
+  { key: 'push_subscriptions', label: 'Assinaturas de push' },
+  { key: 'availability', label: 'Datas de produção' },
+];
+
+function CleanupSection({
+  onError,
+  onNotify,
+}: {
+  onError: (msg: string | null) => void;
+  onNotify: (msg: string) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Record<string, number> | null>(null);
+  const [confirmText, setConfirmText] = useState('');
+
+  function toggle(key: string) {
+    if (selected.includes(key)) {
+      setSelected(selected.filter((k) => k !== key));
+    } else {
+      setSelected([...selected, key]);
+    }
+  }
+
+  function selectAll() {
+    setSelected(CLEANUP_OPTIONS.map((o) => o.key));
+  }
+  function clearAll() {
+    setSelected([]);
+  }
+
+  async function run() {
+    if (selected.length === 0) return;
+    if (confirmText !== 'APAGAR') {
+      onError('Digite APAGAR (em maiúsculas) pra confirmar.');
+      return;
+    }
+    if (
+      !confirm(
+        `Apagar dados de ${selected.length} tabela${selected.length > 1 ? 's' : ''}?\n\n` +
+          selected.join(', ') +
+          '\n\nEssa ação não pode ser desfeita.',
+      )
+    )
+      return;
+    setBusy(true);
+    onError(null);
+    try {
+      const res = await fetch('/api/admin/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tables: selected }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setResult(data.deleted as Record<string, number>);
+      setSelected([]);
+      setConfirmText('');
+      onNotify('Limpeza concluída.');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border-2 border-rose-200 bg-rose-50/30 p-5">
+      <h2 className="mb-2 text-sm font-medium uppercase tracking-widest text-rose-900/70">
+        🧹 Limpar dados de teste
+      </h2>
+      <p className="mb-3 text-sm text-primary-500/80">
+        Use isso pra apagar dados que você criou testando antes do uso
+        real. Marque o que quer limpar, digite <strong>APAGAR</strong> no
+        campo abaixo e clique em executar. Produtos, sabores e
+        administradores não são apagados.
+      </p>
+
+      <div className="mb-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={selectAll}
+          className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] text-primary-500/70 hover:border-primary-500"
+        >
+          Marcar todos
+        </button>
+        <button
+          type="button"
+          onClick={clearAll}
+          className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] text-primary-500/70 hover:border-primary-500"
+        >
+          Desmarcar
+        </button>
+      </div>
+
+      <ul className="grid gap-1.5 md:grid-cols-2">
+        {CLEANUP_OPTIONS.map((opt) => (
+          <li key={opt.key}>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm text-primary-500/90 hover:border-rose-300">
+              <input
+                type="checkbox"
+                checked={selected.includes(opt.key)}
+                onChange={() => toggle(opt.key)}
+              />
+              {opt.label}
+            </label>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+          placeholder="Digite APAGAR pra confirmar"
+          disabled={selected.length === 0}
+          className="flex-1 rounded-md border border-rose-300 bg-white px-3 py-2 text-sm outline-none focus:border-rose-500 disabled:opacity-50"
+        />
+        <button
+          type="button"
+          disabled={busy || selected.length === 0 || confirmText !== 'APAGAR'}
+          onClick={run}
+          className="rounded-full bg-rose-500 px-5 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-40"
+        >
+          {busy ? 'Apagando…' : `🧹 Apagar ${selected.length} ${selected.length === 1 ? 'tabela' : 'tabelas'}`}
+        </button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+          <p className="mb-1 font-medium">Limpeza concluída:</p>
+          <ul className="ml-4 list-disc">
+            {Object.entries(result).map(([table, count]) => (
+              <li key={table}>
+                {table}: {count === -1 ? 'erro' : `${count} linhas apagadas`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 

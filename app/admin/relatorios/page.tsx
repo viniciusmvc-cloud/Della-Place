@@ -217,6 +217,17 @@ export default function RelatoriosPage() {
           <p className="text-sm text-primary-500/60">
             Métricas consolidadas · {PERIOD_LABEL[period]}
           </p>
+          <div className="mt-2 inline-flex rounded-full border border-primary-200 bg-white p-1 text-xs">
+            <span className="rounded-full bg-primary-500 px-3 py-1 font-medium text-white">
+              Resumo
+            </span>
+            <a
+              href="/admin/relatorios/bi"
+              className="rounded-full px-3 py-1 text-primary-500/70 hover:text-primary-500"
+            >
+              📊 BI →
+            </a>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1 rounded-full border border-primary-200 bg-white p-1">
           {PERIODS.map((p) => (
