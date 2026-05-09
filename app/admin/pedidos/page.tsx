@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchOrders, setOrderStatus as apiSetStatus } from '@/lib/api';
 import { type Order, type OrderStatus } from '@/lib/orders';
 import {
@@ -11,18 +11,37 @@ import {
 } from '@/lib/period';
 import { formatDateBR } from '@/lib/utils';
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  pendente: 'Pendente',
-  confirmado: 'Confirmado',
-  pago: 'Recebido',
-  cancelado: 'Cancelado',
+type ConfirmationStatus = 'pendente' | 'confirmado' | 'cancelado';
+type PaymentStatus = 'pendente' | 'recebido';
+
+function deriveConfirmation(s: OrderStatus): ConfirmationStatus {
+  if (s === 'cancelado') return 'cancelado';
+  if (s === 'pendente') return 'pendente';
+  return 'confirmado';
+}
+function derivePayment(s: OrderStatus): PaymentStatus {
+  return s === 'pago' ? 'recebido' : 'pendente';
+}
+
+const CONFIRM_TONE: Record<ConfirmationStatus, string> = {
+  pendente: 'bg-amber-100 text-amber-800 border-amber-200',
+  confirmado: 'bg-blue-100 text-blue-800 border-blue-200',
+  cancelado: 'bg-rose-100 text-rose-800 border-rose-200',
 };
 
-const STATUS_BG: Record<OrderStatus, string> = {
-  pendente: 'bg-amber-400 text-amber-950 hover:bg-amber-500',
-  confirmado: 'bg-blue-500 text-white hover:bg-blue-600',
-  pago: 'bg-emerald-500 text-white hover:bg-emerald-600',
-  cancelado: 'bg-rose-500 text-white hover:bg-rose-600',
+const PAY_TONE: Record<PaymentStatus, string> = {
+  pendente: 'bg-slate-100 text-slate-700 border-slate-200',
+  recebido: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+};
+
+const CONFIRM_LABEL: Record<ConfirmationStatus, string> = {
+  pendente: 'Pendente',
+  confirmado: 'Confirmado',
+  cancelado: 'Cancelado',
+};
+const PAY_LABEL: Record<PaymentStatus, string> = {
+  pendente: 'Pendente',
+  recebido: 'Recebido',
 };
 
 export default function PedidosPage() {
@@ -30,6 +49,7 @@ export default function PedidosPage() {
   const [period, setPeriod] = useState<Period>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -37,21 +57,26 @@ export default function PedidosPage() {
   }, [tick]);
 
   const sundayDates = useMemo(() => {
-    const all = Array.from(new Set(orders.map((o) => o.date))).sort().reverse();
-    return all;
+    return Array.from(new Set(orders.map((o) => o.date))).sort().reverse();
   }, [orders]);
 
-  const filtered = orders
-    .filter((o) => (statusFilter === 'all' ? true : o.status === statusFilter))
-    .filter((o) => (period === 'all' ? true : inPeriod(o.date, period)))
-    .filter((o) => (dateFilter ? o.date === dateFilter : true))
-    .sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      const aTime = a.items[0]?.time ?? '00:00';
-      const bTime = b.items[0]?.time ?? '00:00';
-      if (aTime !== bTime) return aTime.localeCompare(bTime);
-      return a.customer.fullName.localeCompare(b.customer.fullName);
-    });
+  const filtered = useMemo(
+    () =>
+      orders
+        .filter((o) =>
+          statusFilter === 'all' ? true : o.status === statusFilter,
+        )
+        .filter((o) => (period === 'all' ? true : inPeriod(o.date, period)))
+        .filter((o) => (dateFilter ? o.date === dateFilter : true))
+        .sort((a, b) => {
+          const aTime = a.items[0]?.time ?? '00:00';
+          const bTime = b.items[0]?.time ?? '00:00';
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          if (aTime !== bTime) return aTime.localeCompare(bTime);
+          return a.customer.fullName.localeCompare(b.customer.fullName);
+        }),
+    [orders, statusFilter, period, dateFilter],
+  );
 
   const stats = useMemo(() => {
     const inScope = filtered.filter((o) => o.status !== 'cancelado');
@@ -69,18 +94,8 @@ export default function PedidosPage() {
     };
   }, [filtered]);
 
-  async function cycleStatus(o: Order) {
-    const next: Record<OrderStatus, OrderStatus> = {
-      pendente: 'confirmado',
-      confirmado: 'pago',
-      pago: 'pendente',
-      cancelado: 'pendente',
-    };
-    await apiSetStatus(o.id, next[o.status]);
-    setTick((t) => t + 1);
-  }
-
   async function setStatus(id: string, status: OrderStatus) {
+    setOpenMenuId(null);
     await apiSetStatus(id, status);
     setTick((t) => t + 1);
   }
@@ -95,8 +110,8 @@ export default function PedidosPage() {
           Pedidos
         </h1>
         <p className="text-sm text-primary-500/60">
-          Lista completa de pedidos. Clique no status para avançar (pendente →
-          confirmado → recebido).
+          Listados em ordem cronológica pelo horário de produção. Use o menu
+          de ações pra confirmar, marcar pago ou cancelar.
         </p>
       </header>
 
@@ -185,77 +200,198 @@ export default function PedidosPage() {
           <table className="w-full text-sm">
             <thead className="bg-primary-50/60 text-left text-xs uppercase tracking-widest text-primary-500/60">
               <tr>
-                <th className="px-3 py-2">Cliente</th>
-                <th className="px-3 py-2">ID</th>
+                <th className="px-3 py-2">Horário</th>
                 <th className="px-3 py-2">Data</th>
+                <th className="px-3 py-2">Cliente</th>
                 <th className="px-3 py-2">Pizzas</th>
                 <th className="px-3 py-2 text-right">Valor</th>
+                <th className="px-3 py-2 text-center">Confirmação</th>
                 <th className="px-3 py-2 text-center">Pagamento</th>
                 <th className="px-3 py-2 text-center">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((o) => (
-                <tr
+                <OrderRow
                   key={o.id}
-                  className="border-t border-primary-100 align-top"
-                >
-                  <td className="px-3 py-2">
-                    <p className="font-medium text-primary-500">
-                      {o.customer.fullName}
-                    </p>
-                    <p className="text-[11px] text-primary-500/60">
-                      {o.customer.phone}
-                    </p>
-                  </td>
-                  <td className="px-3 py-2 text-[11px] text-primary-500/60">
-                    {o.id.slice(0, 8)}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-primary-500/70">
-                    {formatDateBR(new Date(`${o.date}T12:00:00`))}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-primary-500/70">
-                    {o.items.length}× ·{' '}
-                    {o.items.map((it) => `${it.time} ${it.flavor}`).join(' / ')}
-                  </td>
-                  <td className="px-3 py-2 text-right font-medium text-primary-500">
-                    R$ {o.total}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => cycleStatus(o)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${STATUS_BG[o.status]}`}
-                    >
-                      {STATUS_LABEL[o.status]}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {o.status !== 'cancelado' ? (
-                      <button
-                        type="button"
-                        onClick={() => setStatus(o.id, 'cancelado')}
-                        className="text-[11px] text-rose-600 hover:underline"
-                      >
-                        cancelar
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setStatus(o.id, 'pendente')}
-                        className="text-[11px] text-primary-500/60 hover:underline"
-                      >
-                        reabrir
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                  order={o}
+                  isMenuOpen={openMenuId === o.id}
+                  onToggleMenu={() =>
+                    setOpenMenuId(openMenuId === o.id ? null : o.id)
+                  }
+                  onAction={(s) => setStatus(o.id, s)}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function OrderRow({
+  order,
+  isMenuOpen,
+  onToggleMenu,
+  onAction,
+}: {
+  order: Order;
+  isMenuOpen: boolean;
+  onToggleMenu: () => void;
+  onAction: (status: OrderStatus) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        onToggleMenu();
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isMenuOpen, onToggleMenu]);
+
+  const firstTime = order.items[0]?.time ?? '—';
+  const confirmation = deriveConfirmation(order.status);
+  const payment = derivePayment(order.status);
+
+  return (
+    <tr className="border-t border-primary-100 align-top">
+      <td className="px-3 py-2">
+        <span
+          className="inline-block rounded bg-primary-500 px-2 py-0.5 text-[12px] text-white"
+          style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+        >
+          {firstTime}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-xs text-primary-500/80">
+        {formatDateBR(new Date(`${order.date}T12:00:00`))}
+      </td>
+      <td className="px-3 py-2">
+        <p className="font-medium text-primary-500">{order.customer.fullName}</p>
+        <p className="text-[11px] text-primary-500/60">{order.customer.phone}</p>
+      </td>
+      <td className="px-3 py-2 text-xs text-primary-500/70">
+        {order.items.length}× ·{' '}
+        {order.items.map((it) => it.flavor).join(' / ')}
+      </td>
+      <td className="px-3 py-2 text-right font-medium text-primary-500">
+        R$ {order.total}
+      </td>
+      <td className="px-3 py-2 text-center">
+        <span
+          className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] ${CONFIRM_TONE[confirmation]}`}
+        >
+          {CONFIRM_LABEL[confirmation]}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-center">
+        <span
+          className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] ${PAY_TONE[payment]}`}
+        >
+          {PAY_LABEL[payment]}
+        </span>
+      </td>
+      <td className="relative px-3 py-2 text-center">
+        <button
+          type="button"
+          onClick={onToggleMenu}
+          aria-label="Ações do pedido"
+          className="rounded-full border border-primary-200 px-2 py-1 text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+        >
+          ⋯
+        </button>
+        {isMenuOpen && (
+          <div
+            ref={menuRef}
+            className="absolute right-3 z-20 mt-1 w-52 rounded-xl border border-primary-100 bg-white p-1 text-left shadow-lg"
+          >
+            {order.status !== 'cancelado' && (
+              <>
+                {confirmation === 'pendente' && (
+                  <MenuItem
+                    icon="✓"
+                    label="Confirmar pedido"
+                    onClick={() => onAction('confirmado')}
+                  />
+                )}
+                {confirmation === 'confirmado' && payment === 'pendente' && (
+                  <MenuItem
+                    icon="💰"
+                    label="Marcar como pago"
+                    onClick={() => onAction('pago')}
+                  />
+                )}
+                {payment === 'recebido' && (
+                  <MenuItem
+                    icon="↩"
+                    label="Voltar para confirmado"
+                    onClick={() => onAction('confirmado')}
+                  />
+                )}
+                <MenuItem
+                  icon="🗑"
+                  label="Cancelar pedido"
+                  tone="danger"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        'Cancelar este pedido? O horário volta a ficar disponível pra outros clientes.',
+                      )
+                    ) {
+                      onAction('cancelado');
+                    }
+                  }}
+                />
+              </>
+            )}
+            {order.status === 'cancelado' && (
+              <MenuItem
+                icon="↺"
+                label="Reabrir pedido (volta pra pendente)"
+                onClick={() => onAction('pendente')}
+              />
+            )}
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  tone,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  tone?: 'danger';
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        tone === 'danger'
+          ? 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50'
+          : 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-primary-500/80 hover:bg-primary-50'
+      }
+    >
+      <span className="w-4 text-center" aria-hidden="true">
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
   );
 }
 

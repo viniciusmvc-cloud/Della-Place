@@ -124,6 +124,9 @@ export function upsertAvailability(a: AvailableDate) {
 export function removeAvailability(date: string) {
   return apiFetch(`/api/availability/${date}`, { method: 'DELETE' });
 }
+export function fetchBookedSlots(date: string): Promise<string[]> {
+  return apiFetch<string[]>(`/api/availability/${date}/booked-slots`);
+}
 
 // ─── Suggestions ────────────────────────────────────────
 export type SuggestionStatus = 'new' | 'read' | 'done' | 'archived';

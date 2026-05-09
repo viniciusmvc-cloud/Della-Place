@@ -5,6 +5,7 @@ import CalendarPicker from '@/components/booking/CalendarPicker';
 import {
   createOrder,
   fetchAvailability,
+  fetchBookedSlots,
   fetchMenu,
   lookupCustomer,
   upsertCustomer,
@@ -93,6 +94,7 @@ export default function Booking() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [startHourByDate, setStartHourByDate] = useState<Record<string, string>>({});
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   const [lookupMessage, setLookupMessage] = useState<
     'idle' | 'found' | 'notfound' | 'short'
@@ -170,11 +172,30 @@ export default function Booking() {
     const startHour = (iso && startHourByDate[iso]) || '18:00';
     return generateSlotsFrom(startHour);
   }, [date, startHourByDate]);
+
+  useEffect(() => {
+    if (!date) {
+      setBookedSlots([]);
+      return;
+    }
+    let cancelled = false;
+    fetchBookedSlots(formatDateISO(date))
+      .then((slots) => {
+        if (!cancelled) setBookedSlots(slots);
+      })
+      .catch(() => {
+        if (!cancelled) setBookedSlots([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
   const usedTimes = useMemo(() => {
-    const used = items.map((i) => i.time);
+    const used = [...bookedSlots, ...items.map((i) => i.time)];
     if (stagingTime) used.push(stagingTime);
     return used;
-  }, [items, stagingTime]);
+  }, [bookedSlots, items, stagingTime]);
   const availableTimes = useMemo(
     () => allSlots.filter((t) => !usedTimes.includes(t)),
     [allSlots, usedTimes],
