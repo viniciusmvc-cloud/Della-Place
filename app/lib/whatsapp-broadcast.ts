@@ -23,6 +23,7 @@ export type BroadcastInput = {
   startHour: string;
   menu: MenuItem[];
   notes?: string;
+  forPreview?: boolean;
 };
 
 export function buildBroadcastMessage({
@@ -31,8 +32,9 @@ export function buildBroadcastMessage({
   startHour,
   menu,
   notes,
+  forPreview = false,
 }: BroadcastInput): string {
-  const greet = firstName(customer.fullName);
+  const greet = forPreview ? '[primeiro nome do cliente]' : firstName(customer.fullName);
   const dataLabel = formatDateLong(date);
 
   const flavors = menu

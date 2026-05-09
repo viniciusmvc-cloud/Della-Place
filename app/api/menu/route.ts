@@ -18,6 +18,7 @@ type IngredientRow = {
   id: number;
   menu_item_id: string;
   stock_item_id: string;
+  product_id: number | null;
   amount: string;
   unit: string;
 };
@@ -28,7 +29,7 @@ export async function GET() {
       'SELECT id, name, description, price, cost, active FROM menu_items ORDER BY name',
     );
     const ingredients = await query<IngredientRow>(
-      'SELECT id, menu_item_id, stock_item_id, amount, unit FROM recipe_ingredients',
+      'SELECT id, menu_item_id, stock_item_id, product_id, amount, unit FROM recipe_ingredients',
     );
 
     const result = items.map((m) => ({
@@ -42,6 +43,7 @@ export async function GET() {
         .filter((ing) => ing.menu_item_id === m.id)
         .map((ing) => ({
           stockItemId: ing.stock_item_id,
+          productId: ing.product_id,
           amount: Number(ing.amount),
           unit: ing.unit,
         })),

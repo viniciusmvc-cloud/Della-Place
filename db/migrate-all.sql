@@ -121,6 +121,12 @@ ALTER TABLE products
 ALTER TABLE products
   ADD COLUMN IF NOT EXISTS brand VARCHAR(120) DEFAULT NULL;
 
+-- ═══ v9: liga ingredientes da receita aos produtos ══════════════════
+
+ALTER TABLE recipe_ingredients
+  ADD COLUMN IF NOT EXISTS product_id INT DEFAULT NULL,
+  ADD INDEX IF NOT EXISTS idx_product (product_id);
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

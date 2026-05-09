@@ -451,6 +451,7 @@ function BroadcastSheet({
           startHour: availability.startHour,
           menu,
           notes: availability.notes,
+          forPreview: true,
         })
       : null;
 

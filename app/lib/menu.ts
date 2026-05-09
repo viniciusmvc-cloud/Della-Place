@@ -3,6 +3,7 @@ import { convertAmount, isCompatible } from '@/lib/units';
 
 export type RecipeIngredient = {
   stockItemId: string;
+  productId?: number | null;
   amount: number;
   unit: string;
 };

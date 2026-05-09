@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import HelpBanner from '@/components/admin/HelpBanner';
-import { fetchPurchases } from '@/lib/api';
+import { fetchMenu, fetchOrders, fetchPurchases } from '@/lib/api';
+import { type MenuItem } from '@/lib/menu';
+import { type Order } from '@/lib/orders';
 import { CATEGORY_LABEL, type ProductCategory } from '@/lib/products';
 import { nextSundayISO, type Purchase } from '@/lib/purchases';
+import { convertAmount, isCompatible } from '@/lib/units';
 import { formatDateBR } from '@/lib/utils';
 
 const CATEGORY_DOT: Record<ProductCategory, string> = {
@@ -27,6 +30,8 @@ type Aggregate = {
 
 export default function EstoquePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,8 +40,14 @@ export default function EstoquePage() {
   async function reload() {
     setLoading(true);
     try {
-      const list = await fetchPurchases();
-      setPurchases(list);
+      const [purchaseList, orderList, menuList] = await Promise.all([
+        fetchPurchases(),
+        fetchOrders().catch(() => []),
+        fetchMenu().catch(() => []),
+      ]);
+      setPurchases(purchaseList);
+      setOrders(orderList);
+      setMenu(menuList);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -59,6 +70,41 @@ export default function EstoquePage() {
     () => inStock.filter((p) => p.productionDate === cycleDate),
     [inStock, cycleDate],
   );
+
+  // Consumo por produto = pedidos pagos × ingredientes da receita
+  const consumptionByProduct = useMemo(() => {
+    const map = new Map<number, number>();
+    orders
+      .filter((o) => o.status === 'pago')
+      .forEach((o) => {
+        o.items.forEach((it) => {
+          const m = menu.find(
+            (mi) => mi.name.toLowerCase() === it.flavor.toLowerCase(),
+          );
+          if (!m?.ingredients) return;
+          m.ingredients.forEach((ing) => {
+            if (!ing.productId) return;
+            map.set(
+              ing.productId,
+              (map.get(ing.productId) ?? 0) + ing.amount,
+            );
+          });
+        });
+      });
+    return map;
+  }, [orders, menu]);
+
+  const consumptionUnitByProduct = useMemo(() => {
+    const map = new Map<number, string>();
+    menu.forEach((m) => {
+      m.ingredients?.forEach((ing) => {
+        if (ing.productId && !map.has(ing.productId)) {
+          map.set(ing.productId, ing.unit);
+        }
+      });
+    });
+    return map;
+  }, [menu]);
 
   const aggregates = useMemo(() => {
     const map = new Map<number, Aggregate>();
@@ -84,13 +130,26 @@ export default function EstoquePage() {
         status: p.status as 'pending' | 'kept',
       });
     });
+
+    // Subtrai consumo dos pedidos pagos
+    map.forEach((agg) => {
+      const consumedRaw = consumptionByProduct.get(agg.productId) ?? 0;
+      const consumedUnit = consumptionUnitByProduct.get(agg.productId);
+      if (consumedRaw > 0 && consumedUnit) {
+        const converted = isCompatible(consumedUnit, agg.unit)
+          ? convertAmount(consumedRaw, consumedUnit, agg.unit)
+          : consumedRaw;
+        agg.quantity = Math.max(0, agg.quantity - converted);
+      }
+    });
+
     return Array.from(map.values()).sort((a, b) => {
       if (a.productCategory !== b.productCategory) {
         return a.productCategory.localeCompare(b.productCategory);
       }
       return a.productName.localeCompare(b.productName, 'pt-BR');
     });
-  }, [inStock]);
+  }, [inStock, consumptionByProduct, consumptionUnitByProduct]);
 
   const carryoverCount = useMemo(
     () => inStock.filter((p) => p.status === 'kept').length,

@@ -7,9 +7,11 @@ import {
   createMenuItem,
   deleteMenuItem,
   fetchMenu,
+  fetchProducts,
   fetchStock,
   updateMenuItem,
 } from '@/lib/api';
+import { CATEGORY_LABEL, type Product } from '@/lib/products';
 import {
   calcMargin,
   calcRecipeCost,
@@ -24,14 +26,20 @@ import { RECIPE_UNITS, isCompatible } from '@/lib/units';
 export default function CardapioPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchMenu(), fetchStock()])
-      .then(([m, s]) => {
+    Promise.all([
+      fetchMenu(),
+      fetchStock(),
+      fetchProducts().catch(() => [] as Product[]),
+    ])
+      .then(([m, s, p]) => {
         setMenu(m);
         setStock(s);
+        setProducts(p.filter((x) => x.active));
       })
       .catch(() => {});
   }, []);
@@ -364,6 +372,44 @@ export default function CardapioPage() {
                               >
                                 ×
                               </button>
+                              <div className="col-span-12 mt-1 flex items-center gap-2 border-t border-primary-100 pt-2">
+                                <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                                  ↳ Liga ao produto:
+                                </span>
+                                <select
+                                  value={ing.productId ?? ''}
+                                  onChange={(e) =>
+                                    updateIngredient(m.id, idx, {
+                                      productId: e.target.value
+                                        ? Number(e.target.value)
+                                        : null,
+                                    })
+                                  }
+                                  className="flex-1 rounded-md border border-primary-200 bg-white px-2 py-1 text-xs"
+                                >
+                                  <option value="">— sem ligação (estoque não decrementa) —</option>
+                                  {(['massa', 'molho', 'cobertura', 'operacao'] as const).map(
+                                    (cat) => {
+                                      const items = products.filter(
+                                        (p) =>
+                                          p.category === cat ||
+                                          p.categories?.includes(cat),
+                                      );
+                                      if (items.length === 0) return null;
+                                      return (
+                                        <optgroup key={cat} label={CATEGORY_LABEL[cat]}>
+                                          {items.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                              {p.name}
+                                              {p.brand ? ` · ${p.brand}` : ''}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      );
+                                    },
+                                  )}
+                                </select>
+                              </div>
                             </li>
                           );
                         })}

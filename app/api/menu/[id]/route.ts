@@ -17,7 +17,12 @@ export async function PATCH(
       price?: number;
       cost?: number;
       active?: boolean;
-      ingredients?: { stockItemId: string; amount: number; unit: string }[];
+      ingredients?: {
+        stockItemId: string;
+        productId?: number | null;
+        amount: number;
+        unit: string;
+      }[];
     }>(request);
     if (!body) return badRequest('Invalid body');
 
@@ -59,8 +64,8 @@ export async function PATCH(
         );
         for (const ing of body.ingredients) {
           await conn.query(
-            'INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, amount, unit) VALUES (?, ?, ?, ?)',
-            [id, ing.stockItemId, ing.amount, ing.unit],
+            'INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, product_id, amount, unit) VALUES (?, ?, ?, ?, ?)',
+            [id, ing.stockItemId, ing.productId ?? null, ing.amount, ing.unit],
           );
         }
       }
