@@ -9,7 +9,7 @@ import {
   fetchOrders,
 } from '@/lib/api';
 import { type Expense } from '@/lib/expenses';
-import { calcMargin, type MenuItem } from '@/lib/menu';
+import { type MenuItem } from '@/lib/menu';
 import { type Order, type StoredCustomer } from '@/lib/orders';
 import {
   PERIODS,
@@ -74,9 +74,20 @@ export default function AdminDashboard() {
     return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
   })();
 
-  const recent = [...orders]
-    .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
-    .slice(0, 5);
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = [...orders]
+    .filter(
+      (o) =>
+        (o.status === 'pendente' || o.status === 'confirmado') &&
+        o.date >= today,
+    )
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const at = a.items[0]?.time ?? '00:00';
+      const bt = b.items[0]?.time ?? '00:00';
+      return at.localeCompare(bt);
+    })
+    .slice(0, 6);
 
   return (
     <div className="space-y-6">
@@ -121,61 +132,38 @@ export default function AdminDashboard() {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <Card title="Margem por pizza">
-          {menu.length === 0 ? (
-            <p className="text-sm text-primary-500/60">Nenhum item no cardápio.</p>
+        <Card title="Próximos pedidos">
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-primary-500/60">
+              Nenhum pedido futuro. Quando clientes reservarem, eles aparecem
+              aqui em ordem cronológica de produção.
+            </p>
           ) : (
             <ul className="space-y-2">
-              {menu.map((m) => {
-                const mg = calcMargin(m);
-                return (
-                  <li
-                    key={m.id}
-                    className="flex items-center justify-between rounded-md border border-primary-100 bg-white p-2 text-sm"
-                  >
-                    <span className="text-primary-500">{m.name}</span>
-                    <span className="flex items-center gap-3 text-xs">
-                      <span className="text-primary-500/60">
-                        custo R$ {m.cost}
-                      </span>
-                      <span className="text-primary-500/60">venda R$ {m.price}</span>
-                      <span
-                        className={
-                          mg.marginPct >= 50
-                            ? 'rounded bg-emerald-100 px-2 py-0.5 text-emerald-800'
-                            : mg.marginPct >= 30
-                              ? 'rounded bg-amber-100 px-2 py-0.5 text-amber-800'
-                              : 'rounded bg-rose-100 px-2 py-0.5 text-rose-800'
-                        }
-                      >
-                        {mg.marginPct.toFixed(0)}%
-                      </span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <Link
-            href="/admin/cardapio"
-            className="mt-3 inline-block text-xs text-primary-500/70 hover:text-primary-500"
-          >
-            Editar cardápio →
-          </Link>
-        </Card>
-
-        <Card title="Últimos pedidos">
-          {recent.length === 0 ? (
-            <p className="text-sm text-primary-500/60">Nenhum pedido ainda.</p>
-          ) : (
-            <ul className="space-y-2">
-              {recent.map((o) => (
+              {upcoming.map((o) => (
                 <li
                   key={o.id}
-                  className="flex items-center justify-between rounded-md border border-primary-100 bg-white p-2 text-sm"
+                  className="flex items-center justify-between gap-2 rounded-md border border-primary-100 bg-white p-2 text-sm"
                 >
-                  <span className="text-primary-500">
-                    {o.customer.fullName}
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="rounded bg-primary-500 px-2 py-0.5 text-[11px] text-white"
+                      style={{
+                        fontFamily: 'var(--font-cormorant), Georgia, serif',
+                      }}
+                    >
+                      {o.items[0]?.time ?? '—'}
+                    </span>
+                    <span className="flex flex-col leading-tight">
+                      <span className="text-primary-500">
+                        {o.customer.fullName}
+                      </span>
+                      <span className="text-[10px] text-primary-500/60">
+                        {new Date(`${o.date}T12:00:00`).toLocaleDateString('pt-BR')}
+                        {' · '}
+                        {o.items.length}× pizza
+                      </span>
+                    </span>
                   </span>
                   <span className="flex items-center gap-2 text-xs">
                     <span className="text-primary-500/60">R$ {o.total}</span>
