@@ -1,6 +1,7 @@
 import type { Expense } from '@/lib/expenses';
 import type { MenuItem, RecipeIngredient } from '@/lib/menu';
 import type { Order, OrderStatus, StoredCustomer } from '@/lib/orders';
+import type { Product, ProductInput } from '@/lib/products';
 import type { StockItem } from '@/lib/stock';
 import type { AvailableDate } from '@/lib/availability';
 
@@ -189,6 +190,29 @@ export function updateCommunityPost(
 }
 export function deleteCommunityPost(id: number) {
   return apiFetch(`/api/community-posts/${id}`, { method: 'DELETE' });
+}
+
+// ─── Products (catálogo) ────────────────────────────────
+export function fetchProducts(): Promise<Product[]> {
+  return apiFetch<Product[]>('/api/products');
+}
+export function createProduct(p: ProductInput) {
+  return apiFetch<{ ok: boolean; id: number }>('/api/products', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  });
+}
+export function updateProduct(id: number, patch: Partial<ProductInput>) {
+  return apiFetch(`/api/products/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+export function deleteProduct(id: number) {
+  return apiFetch<{ ok: boolean; softDeleted?: boolean; message?: string }>(
+    `/api/products/${id}`,
+    { method: 'DELETE' },
+  );
 }
 
 // ─── Push notifications ─────────────────────────────────
