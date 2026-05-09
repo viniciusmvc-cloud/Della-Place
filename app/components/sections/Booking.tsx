@@ -61,11 +61,19 @@ function nextSundays(count: number): Date[] {
   }
   return result;
 }
-function generateAllSlots(): string[] {
+function generateSlotsFrom(startHour: string): string[] {
+  const m = /^(\d{1,2}):(\d{2})/.exec(startHour);
+  const startH = m ? Math.max(0, Math.min(22, parseInt(m[1], 10))) : 18;
+  const startM = m ? Math.max(0, Math.min(45, parseInt(m[2], 10))) : 0;
   const out: string[] = [];
-  for (let h = 18; h < 23; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+  let h = startH;
+  let mm = startM - (startM % 15);
+  while (h < 23) {
+    out.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+    mm += 15;
+    if (mm >= 60) {
+      mm = 0;
+      h += 1;
     }
   }
   return out;
@@ -84,6 +92,7 @@ export default function Booking() {
 
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
+  const [startHourByDate, setStartHourByDate] = useState<Record<string, string>>({});
 
   const [lookupMessage, setLookupMessage] = useState<
     'idle' | 'found' | 'notfound' | 'short'
@@ -101,13 +110,20 @@ export default function Booking() {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       if (av.length > 0) {
-        setAvailableDates(
-          av
-            .map((a) => new Date(`${a.date}T12:00:00`))
-            .filter((d) => d >= todayStart),
+        const futureAv = av.filter(
+          (a) => new Date(`${a.date}T12:00:00`) >= todayStart,
         );
+        setAvailableDates(
+          futureAv.map((a) => new Date(`${a.date}T12:00:00`)),
+        );
+        const map: Record<string, string> = {};
+        futureAv.forEach((a) => {
+          map[a.date] = a.startHour ?? '18:00';
+        });
+        setStartHourByDate(map);
       } else {
         setAvailableDates(nextSundays(8));
+        setStartHourByDate({});
       }
     });
   }, []);
@@ -149,7 +165,11 @@ export default function Booking() {
     };
   }, [customer.cpf, mode]);
 
-  const allSlots = useMemo(() => generateAllSlots(), []);
+  const allSlots = useMemo(() => {
+    const iso = date ? formatDateISO(date) : null;
+    const startHour = (iso && startHourByDate[iso]) || '18:00';
+    return generateSlotsFrom(startHour);
+  }, [date, startHourByDate]);
   const usedTimes = useMemo(() => {
     const used = items.map((i) => i.time);
     if (stagingTime) used.push(stagingTime);

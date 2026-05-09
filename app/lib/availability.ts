@@ -1,8 +1,19 @@
 export type AvailableDate = {
   date: string;
   capacity: number;
+  startHour: string;
   notes?: string;
 };
+
+export const DEFAULT_START_HOUR = '18:00';
+export const DEFAULT_CAPACITY = 8;
+
+export function parseStartHour(s: string | null | undefined): string {
+  if (!s) return DEFAULT_START_HOUR;
+  const m = /^(\d{1,2}):(\d{2})/.exec(s.trim());
+  if (!m) return DEFAULT_START_HOUR;
+  return `${m[1].padStart(2, '0')}:${m[2]}`;
+}
 
 const KEY = 'della-pace.availability.v1';
 
