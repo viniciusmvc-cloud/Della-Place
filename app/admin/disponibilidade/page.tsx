@@ -6,6 +6,7 @@ import {
   fetchCustomers,
   fetchMenu,
   removeAvailability,
+  sendPushNotification,
   upsertAvailability,
 } from '@/lib/api';
 import {
@@ -358,6 +359,45 @@ function BroadcastSheet({
 }) {
   const [search, setSearch] = useState('');
   const [sentSet, setSentSet] = useState<Set<string>>(new Set());
+  const [pushTitle, setPushTitle] = useState('Della Pace está aberta!');
+  const [pushBody, setPushBody] = useState('');
+  const [pushState, setPushState] = useState<
+    'idle' | 'sending' | 'sent' | 'error'
+  >('idle');
+  const [pushResult, setPushResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    const dateLabel = new Date(`${availability.date}T12:00:00`).toLocaleDateString(
+      'pt-BR',
+      { weekday: 'long', day: '2-digit', month: 'long' },
+    );
+    setPushBody(
+      `Nova edição em ${dateLabel}, início ${availability.startHour}. Reserve no site.`,
+    );
+  }, [availability.date, availability.startHour]);
+
+  async function handleSendPush() {
+    if (!pushTitle.trim() || !pushBody.trim()) return;
+    setPushState('sending');
+    setPushResult(null);
+    try {
+      const res = await sendPushNotification({
+        title: pushTitle.trim(),
+        body: pushBody.trim(),
+        url: '/',
+        tag: `da-${availability.date}`,
+      });
+      setPushState('sent');
+      setPushResult(
+        `Enviado para ${res.success}/${res.total} dispositivos${
+          res.gone > 0 ? ` (${res.gone} expirados removidos)` : ''
+        }${res.failed > 0 ? ` · ${res.failed} falharam` : ''}.`,
+      );
+    } catch (err) {
+      setPushState('error');
+      setPushResult(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   const sortable = useMemo(
     () =>
@@ -421,6 +461,59 @@ function BroadcastSheet({
         </header>
 
         <div className="flex-1 overflow-y-auto p-5">
+          <section className="mb-5 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+            <p className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-amber-800">
+              🔔 Push para todo mundo (1 clique)
+            </p>
+            <p className="mb-3 text-[11px] text-amber-900/80">
+              Notifica de uma vez todos os clientes que aceitaram receber
+              avisos no celular. Use textos curtos.
+            </p>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={pushTitle}
+                onChange={(e) => setPushTitle(e.target.value)}
+                maxLength={80}
+                placeholder="Título"
+                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+              />
+              <textarea
+                value={pushBody}
+                onChange={(e) => setPushBody(e.target.value)}
+                maxLength={240}
+                rows={2}
+                placeholder="Mensagem curta"
+                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSendPush}
+                  disabled={pushState === 'sending'}
+                  className="rounded-full bg-amber-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-60"
+                >
+                  {pushState === 'sending' ? 'Enviando…' : 'Enviar push agora'}
+                </button>
+                {pushResult && (
+                  <span
+                    className={
+                      pushState === 'sent'
+                        ? 'text-[11px] text-emerald-700'
+                        : 'text-[11px] text-rose-700'
+                    }
+                  >
+                    {pushResult}
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+            WhatsApp por cliente (mensagem completa)
+          </p>
+
           {sampleMessage && (
             <details className="mb-4 rounded-lg border border-primary-100 bg-primary-50/30 p-3">
               <summary className="cursor-pointer text-xs font-medium uppercase tracking-widest text-primary-500/70">

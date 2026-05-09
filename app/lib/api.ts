@@ -190,3 +190,23 @@ export function updateCommunityPost(
 export function deleteCommunityPost(id: number) {
   return apiFetch(`/api/community-posts/${id}`, { method: 'DELETE' });
 }
+
+// ─── Push notifications ─────────────────────────────────
+export type PushSendResult = {
+  ok: boolean;
+  total: number;
+  success: number;
+  gone: number;
+  failed: number;
+};
+export function sendPushNotification(payload: {
+  title: string;
+  body: string;
+  url?: string;
+  tag?: string;
+}): Promise<PushSendResult> {
+  return apiFetch<PushSendResult>('/api/push/send', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
