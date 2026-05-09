@@ -36,12 +36,21 @@ export default function Header() {
           ))}
         </nav>
 
-        <a
-          href="#reservar"
-          className="rounded-full border border-primary-500 px-4 py-1.5 text-sm text-primary-500 transition-colors hover:bg-primary-500 hover:text-white"
-        >
-          Reservar
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href="/pedido"
+            className="hidden rounded-full px-3 py-1 text-xs text-primary-500/70 hover:text-primary-500 md:inline"
+            title="Tela rápida pra quem já é cliente"
+          >
+            Já sou cliente
+          </a>
+          <a
+            href="#reservar"
+            className="rounded-full border border-primary-500 px-4 py-1.5 text-sm text-primary-500 transition-colors hover:bg-primary-500 hover:text-white"
+          >
+            Reservar
+          </a>
+        </div>
       </div>
     </header>
   );
