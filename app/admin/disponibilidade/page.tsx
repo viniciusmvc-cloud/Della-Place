@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   fetchAvailability,
+  fetchCustomers,
+  fetchMenu,
   removeAvailability,
   upsertAvailability,
 } from '@/lib/api';
@@ -11,6 +13,8 @@ import {
   DEFAULT_START_HOUR,
   type AvailableDate,
 } from '@/lib/availability';
+import { type MenuItem } from '@/lib/menu';
+import { type StoredCustomer } from '@/lib/orders';
 import {
   cn,
   endOfMonth,
@@ -19,6 +23,10 @@ import {
   startOfDay,
   startOfMonth,
 } from '@/lib/utils';
+import {
+  broadcastWhatsAppLink,
+  buildBroadcastMessage,
+} from '@/lib/whatsapp-broadcast';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS = [
@@ -38,13 +46,22 @@ export default function DisponibilidadePage() {
   const [list, setList] = useState<AvailableDate[]>([]);
   const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [broadcastFor, setBroadcastFor] = useState<AvailableDate | null>(null);
+  const [customers, setCustomers] = useState<StoredCustomer[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAvailability()
-      .then((rows) => setList(rows))
-      .catch(() => setList([]));
+    Promise.all([
+      fetchAvailability().catch(() => []),
+      fetchCustomers().catch(() => []),
+      fetchMenu().catch(() => []),
+    ]).then(([av, cust, m]) => {
+      setList(av);
+      setCustomers(cust);
+      setMenu(m.filter((x) => x.active));
+    });
   }, []);
 
   const byDate = useMemo(() => {
@@ -279,13 +296,23 @@ export default function DisponibilidadePage() {
                     {a.notes && ` · ${a.notes}`}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openDay(new Date(`${a.date}T12:00:00`))}
-                  className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
-                >
-                  Editar
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastFor(a)}
+                    className="rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs text-emerald-700 hover:border-emerald-500"
+                    title="Mandar WhatsApp pré-formatado para todos os clientes"
+                  >
+                    📣 Avisar clientes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDay(new Date(`${a.date}T12:00:00`))}
+                    className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                  >
+                    Editar
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -305,6 +332,181 @@ export default function DisponibilidadePage() {
           error={error}
         />
       )}
+
+      {broadcastFor && (
+        <BroadcastSheet
+          availability={broadcastFor}
+          customers={customers}
+          menu={menu}
+          onClose={() => setBroadcastFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function BroadcastSheet({
+  availability,
+  customers,
+  menu,
+  onClose,
+}: {
+  availability: AvailableDate;
+  customers: StoredCustomer[];
+  menu: MenuItem[];
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [sentSet, setSentSet] = useState<Set<string>>(new Set());
+
+  const sortable = useMemo(
+    () =>
+      customers
+        .filter((c) => (c.phone ?? '').replace(/\D/g, '').length >= 10)
+        .filter(
+          (c) =>
+            search.trim() === '' ||
+            c.fullName.toLowerCase().includes(search.toLowerCase()),
+        )
+        .slice()
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR')),
+    [customers, search],
+  );
+
+  const dateLabel = formatDateBR(new Date(`${availability.date}T12:00:00`));
+  const sampleMessage =
+    sortable.length > 0
+      ? buildBroadcastMessage({
+          customer: sortable[0],
+          date: availability.date,
+          startHour: availability.startHour,
+          menu,
+          notes: availability.notes,
+        })
+      : null;
+
+  function markSent(cpf: string) {
+    setSentSet((prev) => {
+      const next = new Set(prev);
+      next.add(cpf);
+      return next;
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-primary-900/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-xl"
+      >
+        <header className="border-b border-primary-100 p-5">
+          <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+            Avisar clientes via WhatsApp
+          </p>
+          <h2
+            className="text-2xl italic text-primary-500"
+            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+          >
+            {dateLabel} · início {availability.startHour}
+          </h2>
+          <p className="mt-1 text-xs text-primary-500/60">
+            Cada botão abre o WhatsApp da pessoa com a mensagem já pronta.
+            Você só precisa apertar enviar.
+          </p>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {sampleMessage && (
+            <details className="mb-4 rounded-lg border border-primary-100 bg-primary-50/30 p-3">
+              <summary className="cursor-pointer text-xs font-medium uppercase tracking-widest text-primary-500/70">
+                Pré-visualizar mensagem
+              </summary>
+              <pre className="mt-2 whitespace-pre-wrap rounded bg-white p-3 text-[11px] leading-relaxed text-primary-500">
+                {sampleMessage}
+              </pre>
+            </details>
+          )}
+
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filtrar por nome…"
+            className="mb-3 w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
+
+          {sortable.length === 0 ? (
+            <p className="rounded-xl border border-primary-100 bg-white p-6 text-center text-sm text-primary-500/60">
+              Nenhum cliente com WhatsApp no cadastro.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {sortable.map((c) => {
+                const sent = sentSet.has(c.cpf);
+                const link = broadcastWhatsAppLink({
+                  customer: c,
+                  date: availability.date,
+                  startHour: availability.startHour,
+                  menu,
+                  notes: availability.notes,
+                });
+                return (
+                  <li
+                    key={c.cpf}
+                    className={cn(
+                      'flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3',
+                      sent
+                        ? 'border-emerald-200 bg-emerald-50/40'
+                        : 'border-primary-100 bg-white',
+                    )}
+                  >
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-sm font-medium text-primary-500">
+                        {c.fullName}
+                      </span>
+                      <span className="text-[11px] text-primary-500/60">
+                        {c.phone}
+                      </span>
+                    </div>
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => markSent(c.cpf)}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs',
+                        sent
+                          ? 'border border-emerald-300 bg-white text-emerald-700'
+                          : 'bg-emerald-500 text-white hover:bg-emerald-600',
+                      )}
+                    >
+                      {sent ? '✓ Enviado' : '📨 Abrir WhatsApp'}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <footer className="flex items-center justify-between gap-2 border-t border-primary-100 p-4">
+          <p className="text-[11px] text-primary-500/60">
+            {sentSet.size} de {sortable.length} marcados como enviados
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-primary-200 px-4 py-1.5 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+          >
+            Fechar
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }
