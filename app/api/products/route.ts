@@ -11,17 +11,42 @@ type ProductRow = {
   id: number;
   name: string;
   category: ProductCategory;
+  categories_json: string | null;
   default_unit: string;
   notes: string | null;
   active: number;
   created_at: Date;
 };
 
+function parseCategories(
+  primary: ProductCategory,
+  json: string | null,
+): ProductCategory[] {
+  const set = new Set<ProductCategory>([primary]);
+  if (json) {
+    try {
+      const parsed = JSON.parse(json);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((c) => {
+          if (
+            typeof c === 'string' &&
+            ['massa', 'molho', 'cobertura', 'operacao'].includes(c)
+          ) {
+            set.add(c as ProductCategory);
+          }
+        });
+      }
+    } catch {}
+  }
+  return Array.from(set);
+}
+
 function rowToJson(r: ProductRow) {
   return {
     id: r.id,
     name: r.name,
     category: r.category,
+    categories: parseCategories(r.category, r.categories_json),
     defaultUnit: r.default_unit,
     notes: r.notes ?? '',
     active: r.active === 1,
@@ -34,7 +59,7 @@ export async function GET() {
     const me = await getCurrentAdmin();
     if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const rows = await query<ProductRow>(
-      `SELECT id, name, category, default_unit, notes, active, created_at
+      `SELECT id, name, category, categories_json, default_unit, notes, active, created_at
        FROM products
        ORDER BY category, name`,
     );
@@ -52,6 +77,7 @@ export async function POST(request: Request) {
     const body = await safeBody<{
       name: string;
       category: ProductCategory;
+      categories?: ProductCategory[];
       defaultUnit: string;
       notes?: string;
       active?: boolean;
@@ -62,12 +88,23 @@ export async function POST(request: Request) {
     }
     if (!body.defaultUnit?.trim()) return badRequest('Unidade obrigatória');
 
+    const extras =
+      Array.isArray(body.categories) && body.categories.length > 0
+        ? body.categories.filter(
+            (c) =>
+              PRODUCT_CATEGORIES.includes(c as ProductCategory) &&
+              c !== body.category,
+          )
+        : [];
+    const categoriesJson = extras.length > 0 ? JSON.stringify(extras) : null;
+
     const result = await execute(
-      `INSERT INTO products (name, category, default_unit, notes, active)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO products (name, category, categories_json, default_unit, notes, active)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         body.name.trim().slice(0, 120),
         body.category,
+        categoriesJson,
         body.defaultUnit.trim().slice(0, 16),
         body.notes?.trim() || null,
         body.active === false ? 0 : 1,

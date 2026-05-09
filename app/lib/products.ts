@@ -25,6 +25,7 @@ export type Product = {
   id: number;
   name: string;
   category: ProductCategory;
+  categories: ProductCategory[];
   defaultUnit: string;
   notes: string;
   active: boolean;
@@ -34,6 +35,7 @@ export type Product = {
 export type ProductInput = {
   name: string;
   category: ProductCategory;
+  categories?: ProductCategory[];
   defaultUnit: string;
   notes?: string;
   active?: boolean;

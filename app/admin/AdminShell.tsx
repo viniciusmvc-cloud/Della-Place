@@ -8,15 +8,15 @@ const NAV = [
   { href: '/admin', label: 'Dashboard', icon: '📊' },
   { href: '/admin/pedidos', label: 'Pedidos', icon: '🍕' },
   { href: '/admin/mise-en-place', label: 'Mise en place', icon: '📋' },
-  { href: '/admin/clientes', label: 'Clientes', icon: '👥' },
+  { href: '/admin/compras', label: 'Compras', icon: '🛒' },
   { href: '/admin/disponibilidade', label: 'Disponibilidade', icon: '📅' },
   { href: '/admin/cardapio', label: 'Cardápio', icon: '🍴' },
   { href: '/admin/produtos', label: 'Produtos', icon: '🥫' },
-  { href: '/admin/compras', label: 'Compras', icon: '🛒' },
   { href: '/admin/financeiro', label: 'Financeiro', icon: '💰' },
+  { href: '/admin/relatorios', label: 'Relatórios', icon: '📈' },
+  { href: '/admin/clientes', label: 'Clientes', icon: '👥' },
   { href: '/admin/sugestoes', label: 'Sugestões', icon: '💬' },
   { href: '/admin/comunidade', label: 'Comunidade', icon: '📷' },
-  { href: '/admin/relatorios', label: 'Relatórios', icon: '📈' },
   { href: '/admin/configuracoes', label: 'Configurações', icon: '⚙️' },
 ];
 

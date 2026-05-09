@@ -21,13 +21,13 @@ export default function HelpBanner({
   doNot,
   notes,
 }: HelpBannerProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const v = localStorage.getItem(STORAGE_PREFIX + id);
-    setCollapsed(v === '1');
+    setCollapsed(v !== '0');
     setHydrated(true);
   }, [id]);
 

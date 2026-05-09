@@ -111,6 +111,11 @@ ALTER TABLE availability
 ALTER TABLE push_subscriptions
   ADD COLUMN IF NOT EXISTS role ENUM('customer','admin') NOT NULL DEFAULT 'customer';
 
+-- ═══ v7: produto pode ter múltiplas categorias ══════════════════════
+
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS categories_json TEXT DEFAULT NULL;
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

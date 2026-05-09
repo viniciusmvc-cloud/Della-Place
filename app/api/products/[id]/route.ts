@@ -22,6 +22,7 @@ export async function PATCH(
     const body = await safeBody<{
       name?: string;
       category?: ProductCategory;
+      categories?: ProductCategory[];
       defaultUnit?: string;
       notes?: string;
       active?: boolean;
@@ -42,6 +43,18 @@ export async function PATCH(
       }
       fragments.push('category = ?');
       values.push(body.category);
+    }
+    if (body.categories !== undefined) {
+      const primary = body.category;
+      const extras = Array.isArray(body.categories)
+        ? body.categories.filter(
+            (c) =>
+              PRODUCT_CATEGORIES.includes(c as ProductCategory) &&
+              c !== primary,
+          )
+        : [];
+      fragments.push('categories_json = ?');
+      values.push(extras.length > 0 ? JSON.stringify(extras) : null);
     }
     if (body.defaultUnit !== undefined) {
       if (!body.defaultUnit.trim()) return badRequest('Unidade inválida');
