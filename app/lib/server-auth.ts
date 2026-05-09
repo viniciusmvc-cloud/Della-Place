@@ -31,22 +31,32 @@ export type AdminUser = {
 };
 
 export async function findAdminByEmail(email: string): Promise<AdminUser | null> {
-  const row = await queryOne<{
+  type Row = {
     id: number;
     email: string;
     name: string | null;
-    phone: string | null;
+    phone?: string | null;
     active: number;
-  }>(
-    'SELECT id, email, name, phone, active FROM admin_users WHERE email = ?',
-    [email.toLowerCase()],
-  );
+  };
+  let row: Row | null;
+  try {
+    row = await queryOne<Row>(
+      'SELECT id, email, name, phone, active FROM admin_users WHERE email = ?',
+      [email.toLowerCase()],
+    );
+  } catch {
+    // Fallback: schema antigo sem coluna phone
+    row = await queryOne<Row>(
+      'SELECT id, email, name, active FROM admin_users WHERE email = ?',
+      [email.toLowerCase()],
+    );
+  }
   if (!row) return null;
   return {
     id: row.id,
     email: row.email,
     name: row.name,
-    phone: row.phone,
+    phone: row.phone ?? null,
     active: row.active === 1,
   };
 }
@@ -193,18 +203,29 @@ export async function setPasswordForEmail(
 }
 
 export async function listAdmins(): Promise<AdminUser[]> {
-  const rows = await query<{
+  type Row = {
     id: number;
     email: string;
     name: string | null;
-    phone: string | null;
+    phone?: string | null;
     active: number;
-  }>('SELECT id, email, name, phone, active FROM admin_users ORDER BY email');
+  };
+  let rows: Row[];
+  try {
+    rows = await query<Row>(
+      'SELECT id, email, name, phone, active FROM admin_users ORDER BY email',
+    );
+  } catch {
+    // Fallback: schema antigo sem coluna phone
+    rows = await query<Row>(
+      'SELECT id, email, name, active FROM admin_users ORDER BY email',
+    );
+  }
   return rows.map((r) => ({
     id: r.id,
     email: r.email,
     name: r.name,
-    phone: r.phone,
+    phone: r.phone ?? null,
     active: r.active === 1,
   }));
 }
