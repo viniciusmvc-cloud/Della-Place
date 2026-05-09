@@ -258,31 +258,16 @@ export default function ComprasPage() {
       />
 
       {pendingClose.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-          <p className="text-sm font-medium text-amber-900">
-            ⏰ Você tem compras de domingos passados que ainda não foram
-            encerradas.
-          </p>
-          <ul className="mt-2 space-y-1 text-xs text-amber-900/80">
-            {Array.from(new Set(pendingClose.map((p) => p.productionDate)))
-              .sort()
-              .map((d) => {
-                const count = pendingClose.filter(
-                  (p) => p.productionDate === d,
-                ).length;
-                return (
-                  <li key={d}>
-                    <Link
-                      href={`/admin/compras/encerrar/${d}`}
-                      className="inline-flex items-center gap-1 underline hover:text-amber-700"
-                    >
-                      {formatDateBR(new Date(`${d}T12:00:00`))} · {count}{' '}
-                      compras pra encerrar →
-                    </Link>
-                  </li>
-                );
-              })}
-          </ul>
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          ⏰ Você tem compras de domingos passados aguardando encerramento.
+          Volte ao{' '}
+          <Link
+            href="/admin"
+            className="font-medium underline hover:text-amber-700"
+          >
+            Dashboard
+          </Link>{' '}
+          pra encerrar o ciclo.
         </div>
       )}
 
@@ -555,17 +540,6 @@ export default function ComprasPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-        {cycleList.length > 0 && (
-          <div className="mt-3 flex justify-end">
-            <Link
-              href={`/admin/compras/encerrar/${productionDate}`}
-              className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
-            >
-              ✓ Encerrar ciclo de{' '}
-              {formatDateBR(new Date(`${productionDate}T12:00:00`))}
-            </Link>
           </div>
         )}
       </section>

@@ -344,19 +344,10 @@ export default function EstoquePage() {
         )}
       </section>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-white p-4">
-        <p className="flex-1 text-sm text-primary-500/80">
-          Domingo à noite, encerre o ciclo decidindo o destino de cada item:
-          consumido, guardado, uso pessoal ou descarte.
-        </p>
-        <Link
-          href={`/admin/compras/encerrar/${cycleDate}`}
-          className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
-        >
-          ✓ Encerrar ciclo de{' '}
-          {formatDateBR(new Date(`${cycleDate}T12:00:00`))}
-        </Link>
-      </div>
+      <p className="rounded-md bg-primary-50/40 px-3 py-2 text-center text-[11px] text-primary-500/60">
+        💡 Pra encerrar o ciclo (decidir o destino de cada item), volte
+        ao Dashboard. Lá fica o fluxo único de encerramento.
+      </p>
     </div>
   );
 }

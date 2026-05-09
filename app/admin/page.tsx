@@ -250,7 +250,7 @@ function CycleClosingWidget({
 
             <div className="mb-4 grid gap-3 md:grid-cols-2">
               <Link
-                href={`/admin/compras/encerrar/${date}`}
+                href={`/admin/estoque/encerrar/${date}`}
                 className={`flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:shadow-md ${
                   b.stockPending === 0
                     ? 'border-emerald-300 bg-white'
@@ -290,7 +290,7 @@ function CycleClosingWidget({
               </Link>
 
               <Link
-                href={`/admin/compras/encerrar/${date}`}
+                href={`/admin/pedidos/cobrar/${date}`}
                 className={`flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:shadow-md ${
                   b.paymentPending === 0
                     ? 'border-emerald-300 bg-white'
@@ -330,22 +330,202 @@ function CycleClosingWidget({
               </Link>
             </div>
 
-            <Link
-              href={`/admin/compras/encerrar/${date}`}
-              className={
-                canClose
-                  ? 'block w-full rounded-full bg-emerald-500 px-5 py-3 text-center text-sm font-medium text-white hover:bg-emerald-600'
-                  : 'block w-full rounded-full bg-amber-500 px-5 py-3 text-center text-sm font-medium text-white hover:bg-amber-600'
-              }
-            >
-              {canClose
-                ? `✓ Confirmar encerramento de ${dateLabel}`
-                : `→ Resolver pendências de ${dateLabel}`}
-            </Link>
+            {canClose ? (
+              <FinalCloseButton
+                date={date}
+                dateLabel={dateLabel}
+                purchases={purchases}
+                orders={orders}
+              />
+            ) : (
+              <p className="rounded-md bg-white px-4 py-2 text-center text-xs text-primary-500/60">
+                🔒 Resolva as 2 tarefas acima pra liberar o encerramento
+                definitivo do ciclo
+              </p>
+            )}
           </div>
         );
       })}
     </section>
+  );
+}
+
+function FinalCloseButton({
+  date,
+  dateLabel,
+  purchases,
+  orders,
+}: {
+  date: string;
+  dateLabel: string;
+  purchases: Purchase[];
+  orders: Order[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const cyclePurchases = purchases.filter((p) => p.productionDate === date);
+  const cycleOrders = orders.filter((o) => o.date === date);
+
+  const receita = cycleOrders
+    .filter((o) => o.status === 'pago')
+    .reduce((s, o) => s + o.total, 0);
+  const custoProducao = cyclePurchases
+    .filter((p) => p.status === 'used')
+    .reduce((s, p) => s + p.totalCost, 0);
+  const guardado = cyclePurchases
+    .filter((p) => p.status === 'kept')
+    .reduce((s, p) => s + p.totalCost, 0);
+  const prejuizo = cyclePurchases
+    .filter((p) => p.status === 'personal' || p.status === 'discarded')
+    .reduce((s, p) => s + p.totalCost, 0);
+  const lucro = receita - custoProducao - prejuizo;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="block w-full rounded-full bg-emerald-500 px-5 py-3 text-center text-sm font-medium text-white hover:bg-emerald-600"
+      >
+        🎉 Encerrar ciclo definitivamente · {dateLabel}
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-primary-900/50 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-primary-100 bg-white p-6 shadow-2xl"
+          >
+            {confirmed ? (
+              <div className="text-center">
+                <p className="text-5xl">🎉</p>
+                <p
+                  className="mt-3 text-2xl italic text-primary-500"
+                  style={{
+                    fontFamily: 'var(--font-cormorant), Georgia, serif',
+                  }}
+                >
+                  Ciclo encerrado
+                </p>
+                <p className="mt-2 text-sm text-primary-500/70">
+                  Os dados deste ciclo já estão disponíveis em Relatórios
+                  e BI. Você pode descansar.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setConfirmed(false);
+                  }}
+                  className="mt-5 rounded-full bg-primary-500 px-5 py-2 text-sm text-white hover:bg-primary-600"
+                >
+                  Voltar pro Dashboard
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                  Encerramento definitivo
+                </p>
+                <h2
+                  className="text-2xl italic text-primary-500"
+                  style={{
+                    fontFamily: 'var(--font-cormorant), Georgia, serif',
+                  }}
+                >
+                  {dateLabel}
+                </h2>
+
+                <ul className="mt-5 space-y-2 border-y border-primary-100 py-4 text-sm">
+                  <li className="flex justify-between">
+                    <span className="text-primary-500/70">Receita</span>
+                    <span className="font-medium text-emerald-700">
+                      R$ {receita.toFixed(2)}
+                    </span>
+                  </li>
+                  <li className="flex justify-between">
+                    <span className="text-primary-500/70">
+                      Custo de produção
+                    </span>
+                    <span className="text-primary-500">
+                      − R$ {custoProducao.toFixed(2)}
+                    </span>
+                  </li>
+                  <li className="flex justify-between">
+                    <span className="text-primary-500/70">
+                      Prejuízo (pessoal + descarte)
+                    </span>
+                    <span className="text-rose-700">
+                      − R$ {prejuizo.toFixed(2)}
+                    </span>
+                  </li>
+                  <li className="flex justify-between">
+                    <span className="text-primary-500/70">
+                      Estoque guardado
+                    </span>
+                    <span className="text-blue-700">
+                      R$ {guardado.toFixed(2)} (pra próxima)
+                    </span>
+                  </li>
+                  <li className="flex justify-between border-t border-primary-200 pt-2">
+                    <span
+                      className="text-base text-primary-500"
+                      style={{
+                        fontFamily:
+                          'var(--font-cormorant), Georgia, serif',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Lucro líquido
+                    </span>
+                    <span
+                      className={
+                        lucro >= 0
+                          ? 'text-xl font-bold text-emerald-700'
+                          : 'text-xl font-bold text-rose-700'
+                      }
+                      style={{
+                        fontFamily:
+                          'var(--font-cormorant), Georgia, serif',
+                      }}
+                    >
+                      R$ {lucro.toFixed(2)}
+                    </span>
+                  </li>
+                </ul>
+
+                <p className="mt-3 text-[11px] text-primary-500/60">
+                  Os dados ficam disponíveis em Relatórios e BI.
+                </p>
+
+                <div className="mt-5 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="flex-1 rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmed(true)}
+                    className="flex-1 rounded-full bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+                  >
+                    🎉 Confirmar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

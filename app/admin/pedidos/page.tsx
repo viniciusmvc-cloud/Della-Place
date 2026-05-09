@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import HelpBanner from '@/components/admin/HelpBanner';
 import { fetchOrders, setOrderStatus as apiSetStatus } from '@/lib/api';
@@ -116,23 +115,6 @@ export default function PedidosPage() {
           de ações pra confirmar, marcar pago ou cancelar.
         </p>
       </header>
-
-      {dateFilter && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
-          <p className="flex-1 text-xs text-amber-900/85">
-            🍕 Quando terminar de marcar os pagamentos do dia{' '}
-            {formatDateBR(new Date(`${dateFilter}T12:00:00`))}, encerre o
-            ciclo (estoque + financeiro) na tela própria.
-          </p>
-          <Link
-            href={`/admin/compras/encerrar/${dateFilter}`}
-            className="rounded-full bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
-          >
-            ✓ Encerrar ciclo de{' '}
-            {formatDateBR(new Date(`${dateFilter}T12:00:00`))}
-          </Link>
-        </div>
-      )}
 
       <HelpBanner
         id="pedidos"
