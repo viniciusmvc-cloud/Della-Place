@@ -15,15 +15,15 @@ export const metadata: Metadata = {
   description: 'Pizzaria artesanal Della Pace',
   manifest: '/manifest.webmanifest',
   icons: {
-    icon: '/icons/dellapace-logo.jpeg',
-    shortcut: '/icons/dellapace-logo.jpeg',
-    apple: '/icons/dellapace-logo.jpeg',
+    icon: '/icons/dellapace-icon.png',
+    shortcut: '/icons/dellapace-icon.png',
+    apple: '/icons/dellapace-icon.png',
   },
   appleWebApp: {
     capable: true,
     title: 'Della Pace',
     statusBarStyle: 'default',
-    startupImage: '/icons/dellapace-logo.jpeg',
+    startupImage: '/icons/dellapace-icon.png',
   },
 };
 

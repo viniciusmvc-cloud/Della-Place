@@ -14,15 +14,15 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'pt-BR',
     icons: [
       {
-        src: '/icons/dellapace-logo.jpeg',
-        sizes: '1280x1280',
-        type: 'image/jpeg',
+        src: '/icons/dellapace-icon.png',
+        sizes: '1024x1024',
+        type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icons/dellapace-logo.jpeg',
-        sizes: '1280x1280',
-        type: 'image/jpeg',
+        src: '/icons/dellapace-icon.png',
+        sizes: '1024x1024',
+        type: 'image/png',
         purpose: 'maskable',
       },
     ],
