@@ -1,7 +1,17 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import { LogoTextOnly } from '@/components/brand/Logo';
 import PhotoCarousel from '@/components/ui/PhotoCarousel';
+import { fetchHeroCommunityPosts } from '@/lib/api';
 
-const HERO_IMAGES = [
+type HeroSlide = {
+  src: string;
+  alt: string;
+  caption?: { text: string; author: string };
+};
+
+const BRAND_IMAGES: HeroSlide[] = [
   {
     src: '/images/pizza-calabria-hero.png',
     alt: 'Pizza Della Pace',
@@ -29,6 +39,32 @@ const HERO_IMAGES = [
 ];
 
 export default function Hero() {
+  const [slides, setSlides] = useState<HeroSlide[]>(BRAND_IMAGES);
+
+  useEffect(() => {
+    fetchHeroCommunityPosts()
+      .then((posts) => {
+        const community: HeroSlide[] = posts
+          .filter((p) => !!p.imageData)
+          .map((p) => ({
+            src: p.imageData as string,
+            alt: `Foto de ${p.name}`,
+            caption: { text: p.message, author: p.name },
+          }));
+        if (community.length === 0) return;
+        const merged: HeroSlide[] = [];
+        const max = Math.max(BRAND_IMAGES.length, community.length);
+        for (let i = 0; i < max; i++) {
+          if (BRAND_IMAGES[i]) merged.push(BRAND_IMAGES[i]);
+          if (community[i]) merged.push(community[i]);
+        }
+        setSlides(merged);
+      })
+      .catch(() => {
+        // mantém BRAND_IMAGES em caso de erro
+      });
+  }, []);
+
   return (
     <section
       id="top"
@@ -79,7 +115,7 @@ export default function Hero() {
 
         <div className="relative">
           <div className="absolute -inset-4 -z-10 rounded-full bg-accent-100/40 blur-2xl" />
-          <PhotoCarousel images={HERO_IMAGES} showCaptions />
+          <PhotoCarousel images={slides} showCaptions />
         </div>
       </div>
     </section>

@@ -14,6 +14,7 @@ const NAV = [
   { href: '/admin/financeiro', label: 'Financeiro', icon: '💰' },
   { href: '/admin/estoque', label: 'Estoque', icon: '📦' },
   { href: '/admin/sugestoes', label: 'Sugestões', icon: '💬' },
+  { href: '/admin/comunidade', label: 'Comunidade', icon: '📷' },
   { href: '/admin/relatorios', label: 'Relatórios', icon: '📈' },
   { href: '/admin/configuracoes', label: 'Configurações', icon: '⚙️' },
 ];

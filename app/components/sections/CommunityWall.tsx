@@ -1,62 +1,98 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  createCommunityPost,
+  fetchPublicCommunityPosts,
+  type CommunityPost,
+} from '@/lib/api';
 
-type Review = {
-  id: string;
-  name: string;
-  text: string;
-  imageDataUrl?: string | null;
-};
-
-const SEED: Review[] = [
+const SEED: CommunityPost[] = [
   {
-    id: 'seed-1',
+    id: -1,
     name: 'Vinícius e Alana Rôxo de Carvalho',
-    text: 'Já viajei o mundo todo, comi pizza na Itália, França, Espanha, Nova York e São Paulo — e a do Aurélio supera todas. Massa artesanal, fermentação longa e natural, produtos selecionados, molho artesanal e caseiro feito com tomate. Juro, é maravilhosa.',
+    message:
+      'Já viajei o mundo todo, comi pizza na Itália, França, Espanha, Nova York e São Paulo. E a do Aurélio supera todas. Massa artesanal, fermentação longa e natural, produtos selecionados, molho artesanal e caseiro feito com tomate. Juro, é maravilhosa.',
+    imageData: null,
+    status: 'approved',
+    showInHero: false,
+    createdAt: new Date().toISOString(),
   },
   {
-    id: 'seed-2',
+    id: -2,
     name: 'Sérgio Oliveira',
-    text: 'Pizza excelente como sempre. Sucesso pra vocês — mesmo que inicialmente seja um pequeno teste!',
+    message:
+      'Pizza excelente como sempre. Sucesso pra vocês, mesmo que inicialmente seja um pequeno teste!',
+    imageData: null,
+    status: 'approved',
+    showInHero: false,
+    createdAt: new Date().toISOString(),
   },
   {
-    id: 'seed-3',
+    id: -3,
     name: 'Tatiana Smera',
-    text: 'Pizza excelente como sempre. Sucesso pra vocês — mesmo que inicialmente seja um pequeno teste!',
+    message:
+      'Pizza excelente como sempre. Sucesso pra vocês, mesmo que inicialmente seja um pequeno teste!',
+    imageData: null,
+    status: 'approved',
+    showInHero: false,
+    createdAt: new Date().toISOString(),
   },
 ];
 
 export default function CommunityWall() {
-  const [reviews, setReviews] = useState<Review[]>(SEED);
+  const [posts, setPosts] = useState<CommunityPost[]>(SEED);
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>(
+    'idle',
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchPublicCommunityPosts()
+      .then((rows) => {
+        if (rows.length > 0) setPosts(rows);
+      })
+      .catch(() => {
+        // mantém SEED em caso de erro
+      });
+  }, []);
 
   function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Imagem muito grande (máx 5MB).');
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () => setImageDataUrl(typeof reader.result === 'string' ? reader.result : null);
+    reader.onload = () =>
+      setImageDataUrl(typeof reader.result === 'string' ? reader.result : null);
     reader.readAsDataURL(file);
   }
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !text.trim()) return;
-    const newReview: Review = {
-      id: `local-${Date.now()}`,
-      name: name.trim(),
-      text: text.trim(),
-      imageDataUrl,
-    };
-    setReviews((prev) => [newReview, ...prev]);
-    setName('');
-    setText('');
-    setImageDataUrl(null);
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3500);
+    setStatus('sending');
+    setError(null);
+    try {
+      await createCommunityPost({
+        name: name.trim(),
+        message: text.trim(),
+        imageData: imageDataUrl,
+      });
+      setStatus('sent');
+      setName('');
+      setText('');
+      setImageDataUrl(null);
+      setTimeout(() => setStatus('idle'), 4000);
+    } catch (err) {
+      setStatus('error');
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   return (
@@ -76,7 +112,8 @@ export default function CommunityWall() {
         </h2>
         <p className="mx-auto mb-12 max-w-xl text-center text-sm text-primary-500/70">
           Compartilhe um momento que você teve com a Della Pace. Comente,
-          envie uma foto sua com a família ou amigos.
+          envie uma foto sua com a família ou amigos. Aurélio aprova antes
+          de aparecer aqui.
         </p>
 
         <form
@@ -128,33 +165,31 @@ export default function CommunityWall() {
             />
             <button
               type="submit"
-              disabled={!name.trim() || !text.trim()}
+              disabled={!name.trim() || !text.trim() || status === 'sending'}
               className="mt-3 w-full rounded-full bg-primary-500 px-6 py-3 text-sm text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Compartilhar
+              {status === 'sending' ? 'Enviando…' : 'Compartilhar'}
             </button>
-            {submitted && (
-              <p className="mt-2 text-center text-sm text-accent-500">
-                Obrigado! Seu comentário aparece logo abaixo.
+            {status === 'sent' && (
+              <p className="mt-2 text-center text-sm text-emerald-600">
+                Obrigado! Aurélio vai aprovar e seu comentário aparece aqui.
               </p>
             )}
-            <p className="mt-2 text-center text-[11px] text-primary-500/50">
-              (Por enquanto seus comentários ficam só neste navegador. Quando
-              o banco de dados estiver pronto, ficarão salvos pra todo mundo
-              ver.)
-            </p>
+            {status === 'error' && error && (
+              <p className="mt-2 text-center text-xs text-rose-600">{error}</p>
+            )}
           </div>
         </form>
 
         <div className="grid gap-6 md:grid-cols-3">
-          {reviews.map((r) => (
+          {posts.map((r) => (
             <figure
               key={r.id}
               className="flex flex-col rounded-2xl border border-primary-100 bg-white p-6 shadow-sm"
             >
-              {r.imageDataUrl && (
+              {r.imageData && (
                 <img
-                  src={r.imageDataUrl}
+                  src={r.imageData}
                   alt={`Foto de ${r.name}`}
                   className="mb-4 h-40 w-full rounded-lg object-cover"
                 />
@@ -167,7 +202,7 @@ export default function CommunityWall() {
                 &ldquo;
               </span>
               <blockquote className="mt-2 flex-1 text-sm leading-relaxed text-primary-500/85">
-                {r.text}
+                {r.message}
               </blockquote>
               <figcaption className="mt-4 text-xs uppercase tracking-widest text-primary-500/60">
                 {r.name}

@@ -147,3 +147,46 @@ export function updateSuggestionStatus(id: number, status: SuggestionStatus) {
 export function deleteSuggestion(id: number) {
   return apiFetch(`/api/suggestions/${id}`, { method: 'DELETE' });
 }
+
+// ─── Community Posts ────────────────────────────────────
+export type CommunityPostStatus = 'pending' | 'approved' | 'hidden';
+export type CommunityPost = {
+  id: number;
+  name: string;
+  message: string;
+  imageData: string | null;
+  status: CommunityPostStatus;
+  showInHero: boolean;
+  createdAt: string;
+};
+export function fetchCommunityPosts(): Promise<CommunityPost[]> {
+  return apiFetch<CommunityPost[]>('/api/community-posts');
+}
+export function fetchPublicCommunityPosts(): Promise<CommunityPost[]> {
+  return apiFetch<CommunityPost[]>('/api/community-posts?scope=public');
+}
+export function fetchHeroCommunityPosts(): Promise<CommunityPost[]> {
+  return apiFetch<CommunityPost[]>('/api/community-posts?scope=hero');
+}
+export function createCommunityPost(body: {
+  name: string;
+  message: string;
+  imageData?: string | null;
+}) {
+  return apiFetch('/api/community-posts', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+export function updateCommunityPost(
+  id: number,
+  patch: { status?: CommunityPostStatus; showInHero?: boolean },
+) {
+  return apiFetch(`/api/community-posts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+export function deleteCommunityPost(id: number) {
+  return apiFetch(`/api/community-posts/${id}`, { method: 'DELETE' });
+}
