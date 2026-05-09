@@ -13,6 +13,7 @@ import { type Expense } from '@/lib/expenses';
 import { type MenuItem } from '@/lib/menu';
 import { type Order } from '@/lib/orders';
 import { type Purchase } from '@/lib/purchases';
+import { formatBRL, titleCase } from '@/lib/format';
 import { formatDateBR } from '@/lib/utils';
 import {
   PERIODS,
@@ -118,23 +119,56 @@ export default function AdminDashboard() {
       />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Faturamento" value={`R$ ${revenue}`} hint="pagos no período" />
+        <Stat
+          label="Faturamento"
+          value={formatBRL(revenue)}
+          hint="pagos no período"
+          href="/admin/relatorios"
+        />
         <Stat
           label="Lucro líquido"
-          value={`R$ ${profit}`}
+          value={formatBRL(profit)}
           hint="receita − custos − despesas"
           tone={profit >= 0 ? 'good' : 'bad'}
+          href="/admin/relatorios"
         />
-        <Stat label="Pedidos" value={String(totalOrders)} hint="ativos no período" />
+        <Stat
+          label="Pedidos"
+          value={String(totalOrders)}
+          hint="ativos no período"
+          href="/admin/pedidos"
+        />
         <Stat
           label="A receber"
-          value={`R$ ${aReceber}`}
+          value={formatBRL(aReceber)}
           hint="confirmados, ainda não pagos"
+          href="/admin/pedidos"
         />
-        <Stat label="Pendentes" value={String(pendentes)} tone={pendentes > 0 ? 'warn' : undefined} hint="aguardando você confirmar" />
-        <Stat label="Custo de pizzas" value={`R$ ${pizzaCost}`} hint="ingredientes" />
-        <Stat label="Despesas operacionais" value={`R$ ${opEx}`} hint="gás, entrega, etc" />
-        <Stat label="Sabor top" value={topFlavor} hint="mais vendido no período" />
+        <Stat
+          label="Pendentes"
+          value={String(pendentes)}
+          tone={pendentes > 0 ? 'warn' : undefined}
+          hint="aguardando você confirmar"
+          href="/admin/pedidos"
+        />
+        <Stat
+          label="Custo de pizzas"
+          value={formatBRL(pizzaCost)}
+          hint="ingredientes"
+          href="/admin/relatorios"
+        />
+        <Stat
+          label="Despesas operacionais"
+          value={formatBRL(opEx)}
+          hint="gás, entrega, etc"
+          href="/admin/financeiro"
+        />
+        <Stat
+          label="Sabor top"
+          value={titleCase(topFlavor)}
+          hint="mais vendido no período"
+          href="/admin/cardapio"
+        />
       </section>
 
     </div>
@@ -561,11 +595,13 @@ function Stat({
   value,
   hint,
   tone,
+  href,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: 'good' | 'warn' | 'bad';
+  href?: string;
 }) {
   const toneCls =
     tone === 'good'
@@ -575,8 +611,8 @@ function Stat({
         : tone === 'bad'
           ? 'border-rose-200 bg-rose-50'
           : 'border-primary-100 bg-white';
-  return (
-    <div className={`rounded-xl border p-4 shadow-sm ${toneCls}`}>
+  const inner = (
+    <>
       <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
         {label}
       </p>
@@ -590,6 +626,21 @@ function Stat({
         {value}
       </p>
       {hint && <p className="mt-1 text-[10px] text-primary-500/50">{hint}</p>}
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`block rounded-xl border p-4 shadow-sm transition-all hover:scale-[1.02] hover:shadow-md ${toneCls}`}
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className={`rounded-xl border p-4 shadow-sm ${toneCls}`}>
+      {inner}
     </div>
   );
 }

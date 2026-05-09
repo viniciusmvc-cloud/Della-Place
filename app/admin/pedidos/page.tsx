@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import HelpBanner from '@/components/admin/HelpBanner';
 import { fetchOrders, setOrderStatus as apiSetStatus } from '@/lib/api';
+import { formatBRL, titleCase } from '@/lib/format';
 import { type Order, type OrderStatus } from '@/lib/orders';
 import {
   PERIODS,
@@ -10,7 +11,9 @@ import {
   inPeriod,
   type Period,
 } from '@/lib/period';
-import { formatDateBR } from '@/lib/utils';
+import { formatDateBR, formatDateISO } from '@/lib/utils';
+
+type View = 'atual' | 'historico';
 
 type ConfirmationStatus = 'pendente' | 'confirmado' | 'cancelado';
 type PaymentStatus = 'pendente' | 'recebido';
@@ -47,6 +50,7 @@ const PAY_LABEL: Record<PaymentStatus, string> = {
 
 export default function PedidosPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [view, setView] = useState<View>('atual');
   const [period, setPeriod] = useState<Period>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
@@ -57,13 +61,23 @@ export default function PedidosPage() {
     fetchOrders().then(setOrders).catch(() => setOrders([]));
   }, [tick]);
 
+  const today = useMemo(() => formatDateISO(new Date()), []);
+
+  // Ciclo atual = pedidos com data >= hoje (próximo domingo / em produção)
+  // Histórico = pedidos com data < hoje (ciclos passados, pago/cancelado)
+  const inView = (o: Order) =>
+    view === 'atual' ? o.date >= today : o.date < today;
+
   const sundayDates = useMemo(() => {
-    return Array.from(new Set(orders.map((o) => o.date))).sort().reverse();
-  }, [orders]);
+    return Array.from(new Set(orders.filter(inView).map((o) => o.date)))
+      .sort()
+      .reverse();
+  }, [orders, view, today]);
 
   const filtered = useMemo(
     () =>
       orders
+        .filter(inView)
         .filter((o) =>
           statusFilter === 'all' ? true : o.status === statusFilter,
         )
@@ -76,7 +90,7 @@ export default function PedidosPage() {
           if (aTime !== bTime) return aTime.localeCompare(bTime);
           return a.customer.fullName.localeCompare(b.customer.fullName);
         }),
-    [orders, statusFilter, period, dateFilter],
+    [orders, view, today, statusFilter, period, dateFilter],
   );
 
   const stats = useMemo(() => {
@@ -111,10 +125,36 @@ export default function PedidosPage() {
           Pedidos
         </h1>
         <p className="text-sm text-primary-500/60">
-          Listados em ordem cronológica pelo horário de produção. Use o menu
-          de ações pra confirmar, marcar pago ou cancelar.
+          {view === 'atual'
+            ? 'Pedidos do ciclo atual e futuros — ainda em produção ou aguardando.'
+            : 'Pedidos de ciclos passados — somente leitura.'}
         </p>
       </header>
+
+      <div className="inline-flex rounded-full border border-primary-200 bg-white p-1">
+        <button
+          type="button"
+          onClick={() => setView('atual')}
+          className={
+            view === 'atual'
+              ? 'rounded-full bg-primary-500 px-4 py-1.5 text-xs font-medium text-white'
+              : 'rounded-full px-4 py-1.5 text-xs text-primary-500/70 hover:text-primary-500'
+          }
+        >
+          Ciclo atual
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('historico')}
+          className={
+            view === 'historico'
+              ? 'rounded-full bg-primary-500 px-4 py-1.5 text-xs font-medium text-white'
+              : 'rounded-full px-4 py-1.5 text-xs text-primary-500/70 hover:text-primary-500'
+          }
+        >
+          Histórico
+        </button>
+      </div>
 
       <HelpBanner
         id="pedidos"
@@ -140,8 +180,8 @@ export default function PedidosPage() {
           value={String(stats.pendentes)}
           tone={stats.pendentes > 0 ? 'warn' : undefined}
         />
-        <KPI label="Recebido" value={`R$ ${stats.recebido}`} tone="good" />
-        <KPI label="A receber" value={`R$ ${stats.aReceber}`} />
+        <KPI label="Recebido" value={formatBRL(stats.recebido)} tone="good" />
+        <KPI label="A receber" value={formatBRL(stats.aReceber)} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-white p-3">
@@ -314,10 +354,10 @@ function OrderRow({
       </td>
       <td className="px-3 py-2 text-xs text-primary-500/70">
         {order.items.length}× ·{' '}
-        {order.items.map((it) => it.flavor).join(' / ')}
+        {order.items.map((it) => titleCase(it.flavor)).join(' / ')}
       </td>
       <td className="px-3 py-2 text-right font-medium text-primary-500">
-        R$ {order.total}
+        {formatBRL(order.total)}
       </td>
       <td className="px-3 py-2 text-center">
         {order.status === 'cancelado' ? (
