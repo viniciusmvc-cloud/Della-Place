@@ -127,6 +127,11 @@ ALTER TABLE recipe_ingredients
   ADD COLUMN IF NOT EXISTS product_id INT DEFAULT NULL,
   ADD INDEX IF NOT EXISTS idx_product (product_id);
 
+-- ═══ v10: telefone do administrador ═════════════════════════════════
+
+ALTER TABLE admin_users
+  ADD COLUMN IF NOT EXISTS phone VARCHAR(20) DEFAULT NULL;
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

@@ -26,6 +26,7 @@ export type AdminUser = {
   id: number;
   email: string;
   name: string | null;
+  phone: string | null;
   active: boolean;
 };
 
@@ -34,9 +35,10 @@ export async function findAdminByEmail(email: string): Promise<AdminUser | null>
     id: number;
     email: string;
     name: string | null;
+    phone: string | null;
     active: number;
   }>(
-    'SELECT id, email, name, active FROM admin_users WHERE email = ?',
+    'SELECT id, email, name, phone, active FROM admin_users WHERE email = ?',
     [email.toLowerCase()],
   );
   if (!row) return null;
@@ -44,6 +46,7 @@ export async function findAdminByEmail(email: string): Promise<AdminUser | null>
     id: row.id,
     email: row.email,
     name: row.name,
+    phone: row.phone,
     active: row.active === 1,
   };
 }
@@ -194,12 +197,14 @@ export async function listAdmins(): Promise<AdminUser[]> {
     id: number;
     email: string;
     name: string | null;
+    phone: string | null;
     active: number;
-  }>('SELECT id, email, name, active FROM admin_users ORDER BY email');
+  }>('SELECT id, email, name, phone, active FROM admin_users ORDER BY email');
   return rows.map((r) => ({
     id: r.id,
     email: r.email,
     name: r.name,
+    phone: r.phone,
     active: r.active === 1,
   }));
 }
