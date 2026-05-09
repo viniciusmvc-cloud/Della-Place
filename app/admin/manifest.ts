@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    id: '/admin',
     name: 'Della Pace · Admin',
     short_name: 'DP Admin',
     description: 'Painel administrativo da Della Pace - gerencie pedidos, estoque e produção.',
