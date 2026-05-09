@@ -150,12 +150,18 @@ export default function ConfiguracoesPage() {
           Como funciona o login
         </h2>
         <p className="text-sm text-primary-500/80">
-          O sistema usa <strong>magic link</strong>: ninguém tem senha. O
-          usuário digita o email cadastrado abaixo, recebe um link no email
-          dele, clica e está dentro. Para revogar acesso, basta desativar ou
-          remover o usuário aqui.
+          O painel aceita <strong>senha</strong> (modo padrão) ou{' '}
+          <strong>link por email</strong> (recuperação se esquecer a senha).
+          Defina sua senha logo abaixo. Para revogar acesso de alguém, basta
+          desativar ou remover o usuário em "Administradores cadastrados".
         </p>
       </section>
+
+      <PasswordSection
+        meEmail={meEmail}
+        onError={setError}
+        onNotify={notify}
+      />
 
       <section className="rounded-xl border border-primary-100 bg-white p-5">
         <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
@@ -286,5 +292,115 @@ export default function ConfiguracoesPage() {
         e peça pra ele te remover.
       </section>
     </div>
+  );
+}
+
+function PasswordSection({
+  meEmail,
+  onError,
+  onNotify,
+}: {
+  meEmail: string | null;
+  onError: (msg: string | null) => void;
+  onNotify: (msg: string) => void;
+}) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onError(null);
+    if (newPassword.length < 8) {
+      onError('Nova senha precisa ter ao menos 8 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      onError('Confirmação não confere com a nova senha.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/auth/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: currentPassword || undefined,
+          newPassword,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      onNotify('Senha atualizada. Use no próximo login.');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-primary-100 bg-white p-5">
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
+        Definir/alterar senha {meEmail && <span className="text-primary-500/40">({meEmail})</span>}
+      </h2>
+      <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-3">
+        <label className="block">
+          <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+            Senha atual (deixe vazio se ainda não tem)
+          </span>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+            Nova senha (mín 8)
+          </span>
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+            Confirmar nova senha
+          </span>
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
+        </label>
+        <div className="md:col-span-3">
+          <button
+            type="submit"
+            disabled={busy || !newPassword || !confirmPassword}
+            className="rounded-full bg-primary-500 px-5 py-2 text-sm text-white disabled:opacity-50"
+          >
+            {busy ? 'Salvando…' : 'Salvar senha'}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }

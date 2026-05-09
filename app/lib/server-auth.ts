@@ -1,7 +1,14 @@
 import { cookies } from 'next/headers';
 import { SignJWT, jwtVerify } from 'jose';
-import { randomBytes } from 'crypto';
+import { randomBytes, scrypt, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
 import { execute, query, queryOne } from './db';
+
+const scryptAsync = promisify(scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+) => Promise<Buffer>;
 
 const SESSION_COOKIE = 'della-pace.session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 dias
@@ -135,6 +142,51 @@ export async function getCurrentAdmin(): Promise<AdminUser | null> {
   const admin = await findAdminByEmail(email);
   if (!admin || !admin.active) return null;
   return admin;
+}
+
+// ─── Password authentication ────────────────────────────
+
+export async function hashPassword(plain: string): Promise<string> {
+  const salt = randomBytes(16);
+  const derived = await scryptAsync(plain, salt, 64);
+  return `${salt.toString('base64')}.${derived.toString('base64')}`;
+}
+
+export async function verifyPasswordHash(
+  plain: string,
+  stored: string | null,
+): Promise<boolean> {
+  if (!stored) return false;
+  const [saltB64, hashB64] = stored.split('.');
+  if (!saltB64 || !hashB64) return false;
+  try {
+    const salt = Buffer.from(saltB64, 'base64');
+    const expected = Buffer.from(hashB64, 'base64');
+    const derived = await scryptAsync(plain, salt, 64);
+    if (expected.length !== derived.length) return false;
+    return timingSafeEqual(expected, derived);
+  } catch {
+    return false;
+  }
+}
+
+export async function getPasswordHash(email: string): Promise<string | null> {
+  const row = await queryOne<{ password_hash: string | null }>(
+    'SELECT password_hash FROM admin_users WHERE email = ? AND active = 1',
+    [email.toLowerCase()],
+  );
+  return row?.password_hash ?? null;
+}
+
+export async function setPasswordForEmail(
+  email: string,
+  plain: string,
+): Promise<void> {
+  const hash = await hashPassword(plain);
+  await execute(
+    'UPDATE admin_users SET password_hash = ? WHERE email = ?',
+    [hash, email.toLowerCase()],
+  );
 }
 
 export async function listAdmins(): Promise<AdminUser[]> {
