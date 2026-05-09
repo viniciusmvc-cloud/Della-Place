@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 type ProductRow = {
   id: number;
   name: string;
+  brand: string | null;
   category: ProductCategory;
   categories_json: string | null;
   default_unit: string;
@@ -45,6 +46,7 @@ function rowToJson(r: ProductRow) {
   return {
     id: r.id,
     name: r.name,
+    brand: r.brand ?? '',
     category: r.category,
     categories: parseCategories(r.category, r.categories_json),
     defaultUnit: r.default_unit,
@@ -59,7 +61,7 @@ export async function GET() {
     const me = await getCurrentAdmin();
     if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const rows = await query<ProductRow>(
-      `SELECT id, name, category, categories_json, default_unit, notes, active, created_at
+      `SELECT id, name, brand, category, categories_json, default_unit, notes, active, created_at
        FROM products
        ORDER BY category, name`,
     );
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
 
     const body = await safeBody<{
       name: string;
+      brand?: string;
       category: ProductCategory;
       categories?: ProductCategory[];
       defaultUnit: string;
@@ -99,10 +102,11 @@ export async function POST(request: Request) {
     const categoriesJson = extras.length > 0 ? JSON.stringify(extras) : null;
 
     const result = await execute(
-      `INSERT INTO products (name, category, categories_json, default_unit, notes, active)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (name, brand, category, categories_json, default_unit, notes, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         body.name.trim().slice(0, 120),
+        body.brand?.trim() || null,
         body.category,
         categoriesJson,
         body.defaultUnit.trim().slice(0, 16),

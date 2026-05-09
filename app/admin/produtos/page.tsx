@@ -40,6 +40,7 @@ const CATEGORY_DOT: Record<ProductCategory, string> = {
 
 type Draft = {
   name: string;
+  brand: string;
   category: ProductCategory;
   categories: ProductCategory[];
   defaultUnit: string;
@@ -48,6 +49,7 @@ type Draft = {
 
 const EMPTY_DRAFT: Draft = {
   name: '',
+  brand: '',
   category: 'cobertura',
   categories: ['cobertura'],
   defaultUnit: 'kg',
@@ -122,8 +124,7 @@ export default function ProdutosPage() {
       setDraft({
         ...draft,
         categories: next,
-        category:
-          draft.category === cat ? next[0] : draft.category,
+        category: draft.category === cat ? next[0] : draft.category,
       });
     } else {
       setDraft({ ...draft, categories: [...draft.categories, cat] });
@@ -138,12 +139,17 @@ export default function ProdutosPage() {
     try {
       await createProduct({
         name: draft.name.trim(),
+        brand: draft.brand.trim() || undefined,
         category: draft.category,
         categories: draft.categories,
         defaultUnit: draft.defaultUnit,
         notes: draft.notes.trim() || undefined,
       });
-      setDraft({ ...EMPTY_DRAFT, category: activeCat, categories: [activeCat] });
+      setDraft({
+        ...EMPTY_DRAFT,
+        category: activeCat,
+        categories: [activeCat],
+      });
       await reload();
       notify('Produto adicionado.');
     } catch (err) {
@@ -158,8 +164,7 @@ export default function ProdutosPage() {
     try {
       await updateProduct(p.id, {
         name: patch.name,
-        category: patch.category,
-        categories: patch.categories,
+        brand: patch.brand,
         defaultUnit: patch.defaultUnit,
         notes: patch.notes,
         active: patch.active,
@@ -197,8 +202,9 @@ export default function ProdutosPage() {
             Produtos
           </h1>
           <p className="text-sm text-primary-500/60">
-            Catálogo de ingredientes. Clique em uma categoria pra ver e
-            editar a lista. Um produto pode estar em mais de uma categoria.
+            Catálogo de ingredientes que você usa. Marca e apresentação
+            (ex: "Mussarela Fatiada Tirolez") fazem parte do produto. Use
+            "Editar" pra ajustar marca e observação.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-primary-500/70">
@@ -214,17 +220,18 @@ export default function ProdutosPage() {
       <HelpBanner
         id="produtos"
         title="Produtos"
-        whenToFill="Sempre que comprar um ingrediente NOVO. Os 16 itens iniciais já vêm cadastrados."
+        whenToFill="Quando começar a usar um ingrediente novo. Os 16 iniciais já vêm cadastrados."
         steps={[
           'Clique numa das 4 abas coloridas pra abrir a categoria.',
-          'Use "Adicionar produto" pra cadastrar (ex: Burrata, Rúcula).',
-          'Marque uma OU MAIS categorias se o produto for usado em vários blocos (ex: tomate em molho + cobertura).',
-          'Pra editar, clique em "Editar" no item. Pra apagar, ⊘ desativa, 🗑 apaga (vira inativo se tiver compras vinculadas).',
+          'Use "Adicionar produto" pra cadastrar (ex: Mussarela Fatiada).',
+          'Marque uma OU MAIS categorias (ex: tomate vai em molho + cobertura).',
+          'Pra ajustar marca ou observação depois, clique em "Editar".',
         ]}
         doNot={[
-          'Aqui é o CATÁLOGO de tipos. Não é onde você lança o que comprou (isso vai em Compras).',
+          'Aqui é o CATÁLOGO. O que você comprou de fato vai em Compras.',
+          'Apresentações diferentes (fatiada vs triturada) viram produtos separados.',
         ]}
-        notes='Operação é pra itens transversais: sal, azeite, embalagens.'
+        notes='Categoria é definida só quando cria. Pra mudar, apaga e cadastra de novo.'
       />
 
       {notice && (
@@ -238,7 +245,7 @@ export default function ProdutosPage() {
         </p>
       )}
 
-      {/* TABS lado a lado */}
+      {/* TABS */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {PRODUCT_CATEGORIES.map((cat) => {
           const isActive = activeCat === cat;
@@ -248,7 +255,11 @@ export default function ProdutosPage() {
               type="button"
               onClick={() => {
                 setActiveCat(cat);
-                setDraft({ ...EMPTY_DRAFT, category: cat, categories: [cat] });
+                setDraft({
+                  ...EMPTY_DRAFT,
+                  category: cat,
+                  categories: [cat],
+                });
               }}
               className={`rounded-xl border-2 p-4 text-left transition-all ${
                 isActive ? CATEGORY_ACTIVE[cat] : CATEGORY_BG[cat]
@@ -274,19 +285,26 @@ export default function ProdutosPage() {
         {CATEGORY_DESCRIPTION[activeCat]}
       </p>
 
-      {/* Form de adicionar */}
+      {/* Form add */}
       <section className="rounded-xl border border-primary-100 bg-white p-5">
         <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
           Adicionar produto em {CATEGORY_LABEL[activeCat]}
         </h2>
         <form onSubmit={handleAdd} className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-[2fr_1fr_2fr]">
+          <div className="grid gap-3 md:grid-cols-[2fr_2fr_1fr]">
             <input
               type="text"
               required
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              placeholder="Nome (ex: Burrata)"
+              placeholder="Nome (ex: Mussarela Fatiada)"
+              className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+            <input
+              type="text"
+              value={draft.brand}
+              onChange={(e) => setDraft({ ...draft, brand: e.target.value })}
+              placeholder="Marca (opcional, ex: Tirolez)"
               className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
             />
             <select
@@ -302,14 +320,14 @@ export default function ProdutosPage() {
                 </option>
               ))}
             </select>
-            <input
-              type="text"
-              value={draft.notes}
-              onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
-              placeholder="Observação (opcional)"
-              className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
-            />
           </div>
+          <input
+            type="text"
+            value={draft.notes}
+            onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+            placeholder="Observação (opcional)"
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
               Categorias:
@@ -333,9 +351,6 @@ export default function ProdutosPage() {
                 </label>
               );
             })}
-            <span className="ml-2 text-[10px] text-primary-500/50">
-              (marque mais de uma se necessário)
-            </span>
           </div>
           <button
             type="submit"
@@ -347,7 +362,7 @@ export default function ProdutosPage() {
         </form>
       </section>
 
-      {/* Lista da categoria selecionada */}
+      {/* Lista vertical */}
       <section
         className={`rounded-xl border-2 p-5 ${CATEGORY_BG[activeCat]} bg-opacity-30`}
       >
@@ -369,7 +384,7 @@ export default function ProdutosPage() {
             Nada nesta categoria ainda. Use o formulário acima.
           </p>
         ) : (
-          <ul className="grid gap-2 md:grid-cols-2">
+          <ul className="space-y-2">
             {visibleList.map((p) => (
               <ProductRow
                 key={p.id}
@@ -396,46 +411,45 @@ function ProductRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(product.name);
+  const [brand, setBrand] = useState(product.brand ?? '');
   const [unit, setUnit] = useState(product.defaultUnit);
   const [notes, setNotes] = useState(product.notes);
-  const [categories, setCategories] = useState<ProductCategory[]>(
-    product.categories?.length ? product.categories : [product.category],
-  );
-
-  function toggleCat(cat: ProductCategory) {
-    if (categories.includes(cat)) {
-      if (categories.length <= 1) return;
-      setCategories(categories.filter((c) => c !== cat));
-    } else {
-      setCategories([...categories, cat]);
-    }
-  }
 
   function save() {
     onPatch({
       name,
+      brand,
       defaultUnit: unit,
       notes,
-      category: categories[0],
-      categories,
     });
     setEditing(false);
   }
 
   if (editing) {
     return (
-      <li className="flex flex-col gap-2 rounded-lg border border-primary-200 bg-white p-3">
-        <div className="grid gap-2 md:grid-cols-[2fr_1fr]">
+      <li className="rounded-lg border border-primary-200 bg-white p-4">
+        <p className="mb-2 text-[10px] uppercase tracking-widest text-primary-500/60">
+          Editar produto · categoria não muda
+        </p>
+        <div className="grid gap-2 md:grid-cols-[2fr_2fr_1fr]">
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-md border border-primary-200 bg-white px-2 py-1 text-sm outline-none focus:border-primary-500"
+            placeholder="Nome"
+            className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
+          <input
+            type="text"
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+            placeholder="Marca"
+            className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
           />
           <select
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
-            className="rounded-md border border-primary-200 bg-white px-2 py-1 text-sm outline-none focus:border-primary-500"
+            className="rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
           >
             {COMMON_UNITS.map((u) => (
               <option key={u} value={u}>
@@ -449,34 +463,13 @@ function ProductRow({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Observação"
-          className="rounded-md border border-primary-200 bg-white px-2 py-1 text-sm outline-none focus:border-primary-500"
+          className="mt-2 w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
         />
-        <div className="flex flex-wrap gap-1">
-          {PRODUCT_CATEGORIES.map((cat) => {
-            const checked = categories.includes(cat);
-            return (
-              <label
-                key={cat}
-                className={`cursor-pointer rounded-full border px-2 py-0.5 text-[10px] ${
-                  checked ? CATEGORY_ACTIVE[cat] : CATEGORY_BG[cat]
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="mr-1"
-                  checked={checked}
-                  onChange={() => toggleCat(cat)}
-                />
-                {CATEGORY_LABEL[cat]}
-              </label>
-            );
-          })}
-        </div>
-        <div className="flex gap-2">
+        <div className="mt-3 flex gap-2">
           <button
             type="button"
             onClick={save}
-            className="rounded-full bg-primary-500 px-3 py-1 text-xs text-white"
+            className="rounded-full bg-primary-500 px-4 py-1.5 text-xs text-white"
           >
             Salvar
           </button>
@@ -484,16 +477,12 @@ function ProductRow({
             type="button"
             onClick={() => {
               setName(product.name);
+              setBrand(product.brand ?? '');
               setUnit(product.defaultUnit);
               setNotes(product.notes);
-              setCategories(
-                product.categories?.length
-                  ? product.categories
-                  : [product.category],
-              );
               setEditing(false);
             }}
-            className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70"
+            className="rounded-full border border-primary-200 px-4 py-1.5 text-xs text-primary-500/70"
           >
             Cancelar
           </button>
@@ -510,14 +499,19 @@ function ProductRow({
     <li
       className={
         product.active
-          ? 'flex items-center justify-between gap-2 rounded-lg border border-primary-100 bg-white p-3'
-          : 'flex items-center justify-between gap-2 rounded-lg border border-primary-100 bg-primary-50/30 p-3 opacity-60'
+          ? 'flex items-center justify-between gap-3 rounded-lg border border-primary-100 bg-white px-4 py-3'
+          : 'flex items-center justify-between gap-3 rounded-lg border border-primary-100 bg-primary-50/30 px-4 py-3 opacity-60'
       }
     >
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-primary-500">
-          {product.name}{' '}
-          <span className="text-[11px] font-normal text-primary-500/60">
+          {product.name}
+          {product.brand && (
+            <span className="ml-2 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-normal text-primary-700">
+              {product.brand}
+            </span>
+          )}
+          <span className="ml-2 text-[11px] font-normal text-primary-500/60">
             · {product.defaultUnit}
           </span>
           {!product.active && (
@@ -526,15 +520,15 @@ function ProductRow({
             </span>
           )}
         </p>
-        {otherCats.length > 0 && (
-          <p className="text-[10px] text-primary-500/60">
-            também em:{' '}
-            {otherCats.map((c) => CATEGORY_LABEL[c]).join(', ')}
-          </p>
-        )}
-        {product.notes && (
-          <p className="truncate text-[11px] text-primary-500/60">
-            {product.notes}
+        {(otherCats.length > 0 || product.notes) && (
+          <p className="text-[11px] text-primary-500/60">
+            {product.notes && <span>{product.notes}</span>}
+            {product.notes && otherCats.length > 0 && ' · '}
+            {otherCats.length > 0 && (
+              <span>
+                também em: {otherCats.map((c) => CATEGORY_LABEL[c]).join(', ')}
+              </span>
+            )}
           </p>
         )}
       </div>
@@ -550,7 +544,7 @@ function ProductRow({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="rounded-full border border-primary-200 px-2 py-1 text-[10px] text-primary-500/70 hover:border-primary-500"
+          className="rounded-full border border-primary-200 px-3 py-1 text-[11px] text-primary-500/70 hover:border-primary-500"
         >
           Editar
         </button>

@@ -116,6 +116,11 @@ ALTER TABLE push_subscriptions
 ALTER TABLE products
   ADD COLUMN IF NOT EXISTS categories_json TEXT DEFAULT NULL;
 
+-- ═══ v8: marca como campo do produto ════════════════════════════════
+
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS brand VARCHAR(120) DEFAULT NULL;
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

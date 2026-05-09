@@ -21,6 +21,7 @@ export async function PATCH(
 
     const body = await safeBody<{
       name?: string;
+      brand?: string;
       category?: ProductCategory;
       categories?: ProductCategory[];
       defaultUnit?: string;
@@ -36,6 +37,10 @@ export async function PATCH(
       if (!body.name.trim()) return badRequest('Nome inválido');
       fragments.push('name = ?');
       values.push(body.name.trim().slice(0, 120));
+    }
+    if (body.brand !== undefined) {
+      fragments.push('brand = ?');
+      values.push(body.brand.trim().slice(0, 120) || null);
     }
     if (body.category !== undefined) {
       if (!PRODUCT_CATEGORIES.includes(body.category)) {

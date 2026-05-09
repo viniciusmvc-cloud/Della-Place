@@ -24,6 +24,7 @@ export const CATEGORY_DESCRIPTION: Record<ProductCategory, string> = {
 export type Product = {
   id: number;
   name: string;
+  brand: string;
   category: ProductCategory;
   categories: ProductCategory[];
   defaultUnit: string;
@@ -34,6 +35,7 @@ export type Product = {
 
 export type ProductInput = {
   name: string;
+  brand?: string;
   category: ProductCategory;
   categories?: ProductCategory[];
   defaultUnit: string;

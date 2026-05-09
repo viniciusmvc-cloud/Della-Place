@@ -9,6 +9,7 @@ const NAV = [
   { href: '/admin/pedidos', label: 'Pedidos', icon: '🍕' },
   { href: '/admin/mise-en-place', label: 'Mise en place', icon: '📋' },
   { href: '/admin/compras', label: 'Compras', icon: '🛒' },
+  { href: '/admin/estoque', label: 'Estoque', icon: '📦' },
   { href: '/admin/disponibilidade', label: 'Disponibilidade', icon: '📅' },
   { href: '/admin/cardapio', label: 'Cardápio', icon: '🍴' },
   { href: '/admin/produtos', label: 'Produtos', icon: '🥫' },

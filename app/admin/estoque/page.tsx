@@ -1,277 +1,303 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import {
-  createStockItem,
-  deleteStockItem,
-  fetchStock,
-  updateStockItem,
-} from '@/lib/api';
-import { isLowStock, newStockId, type StockItem } from '@/lib/stock';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
+import { fetchPurchases } from '@/lib/api';
+import { CATEGORY_LABEL, type ProductCategory } from '@/lib/products';
+import { nextSundayISO, type Purchase } from '@/lib/purchases';
+import { formatDateBR } from '@/lib/utils';
 
-const UNITS = ['un', 'kg', 'g', 'L', 'ml', 'cx', 'pct'];
+const CATEGORY_DOT: Record<ProductCategory, string> = {
+  massa: 'bg-amber-400',
+  molho: 'bg-rose-400',
+  cobertura: 'bg-emerald-400',
+  operacao: 'bg-blue-400',
+};
+
+type Aggregate = {
+  productId: number;
+  productName: string;
+  productCategory: ProductCategory;
+  unit: string;
+  quantity: number;
+  totalCost: number;
+  origins: { date: string; qty: number; status: 'pending' | 'kept' }[];
+};
 
 export default function EstoquePage() {
-  const [items, setItems] = useState<StockItem[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [draft, setDraft] = useState<Partial<StockItem>>({
-    name: '',
-    brand: '',
-    supplier: '',
-    unitPrice: 0,
-    quantity: 0,
-    unit: 'un',
-    minQuantity: 0,
-    notes: '',
-  });
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const cycleDate = useMemo(() => nextSundayISO(), []);
+
+  async function reload() {
+    setLoading(true);
+    try {
+      const list = await fetchPurchases();
+      setPurchases(list);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    fetchStock().then(setItems).catch(() => setItems([]));
+    reload();
   }, []);
 
-  async function addItem(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft.name?.trim()) return;
-    const item: StockItem = {
-      id: newStockId(),
-      name: draft.name.trim(),
-      brand: draft.brand?.trim() ?? '',
-      supplier: draft.supplier?.trim() ?? '',
-      unitPrice: draft.unitPrice ?? 0,
-      quantity: draft.quantity ?? 0,
-      unit: draft.unit ?? 'un',
-      minQuantity: draft.minQuantity ?? 0,
-      notes: draft.notes?.trim() ?? '',
-      updatedAt: new Date().toISOString(),
-    };
-    setItems((prev) => [...prev, item]);
-    setDraft({
-      name: '',
-      brand: '',
-      supplier: '',
-      unitPrice: 0,
-      quantity: 0,
-      unit: 'un',
-      minQuantity: 0,
-      notes: '',
+  const inStock = useMemo(
+    () =>
+      purchases.filter((p) => p.status === 'pending' || p.status === 'kept'),
+    [purchases],
+  );
+
+  const cycleList = useMemo(
+    () => inStock.filter((p) => p.productionDate === cycleDate),
+    [inStock, cycleDate],
+  );
+
+  const aggregates = useMemo(() => {
+    const map = new Map<number, Aggregate>();
+    inStock.forEach((p) => {
+      let agg = map.get(p.productId);
+      if (!agg) {
+        agg = {
+          productId: p.productId,
+          productName: p.productName,
+          productCategory: p.productCategory,
+          unit: p.unit,
+          quantity: 0,
+          totalCost: 0,
+          origins: [],
+        };
+        map.set(p.productId, agg);
+      }
+      agg.quantity += p.quantity;
+      agg.totalCost += p.totalCost;
+      agg.origins.push({
+        date: p.productionDate,
+        qty: p.quantity,
+        status: p.status as 'pending' | 'kept',
+      });
     });
-    setShowAdd(false);
-    await createStockItem(item);
-  }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.productCategory !== b.productCategory) {
+        return a.productCategory.localeCompare(b.productCategory);
+      }
+      return a.productName.localeCompare(b.productName, 'pt-BR');
+    });
+  }, [inStock]);
 
-  async function update(id: string, patch: Partial<StockItem>) {
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === id ? { ...it, ...patch, updatedAt: new Date().toISOString() } : it,
-      ),
+  const carryoverCount = useMemo(
+    () => inStock.filter((p) => p.status === 'kept').length,
+    [inStock],
+  );
+
+  const totals = useMemo(() => {
+    return inStock.reduce(
+      (acc, p) => ({
+        items: acc.items + 1,
+        cost: acc.cost + p.totalCost,
+      }),
+      { items: 0, cost: 0 },
     );
-    await updateStockItem(id, patch);
-  }
-
-  async function remove(id: string) {
-    if (!confirm('Remover este produto do estoque?')) return;
-    setItems((prev) => prev.filter((it) => it.id !== id));
-    await deleteStockItem(id);
-  }
-
-  function adjust(id: string, delta: number) {
-    const it = items.find((x) => x.id === id);
-    if (!it) return;
-    update(id, { quantity: Math.max(0, it.quantity + delta) });
-  }
-
-  const lowStock = items.filter(isLowStock);
-  const totalValue = items.reduce((s, it) => s + it.unitPrice * it.quantity, 0);
+  }, [inStock]);
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1
-            className="text-3xl italic text-primary-500"
-            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
-          >
-            Estoque
-          </h1>
-          <p className="text-sm text-primary-500/60">
-            Produtos, fornecedores, marcas e quantidade. Avisa quando algo está
-            acabando.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowAdd(!showAdd)}
-          className="rounded-full bg-primary-500 px-4 py-2 text-sm text-white hover:bg-primary-600"
+      <header>
+        <h1
+          className="text-3xl italic text-primary-500"
+          style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
         >
-          {showAdd ? 'Fechar' : '+ Adicionar produto'}
-        </button>
+          Estoque
+        </h1>
+        <p className="text-sm text-primary-500/60">
+          O que existe agora pra produzir. É a soma das compras que ainda
+          não foram consumidas mais o que sobrou de ciclos passados marcado
+          como "Guardar".
+        </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <KPI label="Itens no estoque" value={String(items.length)} />
-        <KPI label="Valor total" value={`R$ ${totalValue.toFixed(2)}`} />
-        <KPI
-          label="Estoque baixo"
-          value={String(lowStock.length)}
-          tone={lowStock.length > 0 ? 'warn' : undefined}
-        />
-      </div>
+      <HelpBanner
+        id="estoque"
+        title="Estoque"
+        whenToFill="Você não preenche aqui. É calculado automaticamente das compras."
+        steps={[
+          'Olhe quanto tem de cada ingrediente antes de produzir.',
+          'Confronte com Mise en place pra decidir o que ainda falta comprar.',
+          'Domingo à noite, "Encerrar ciclo" pra dar destino aos itens que sobraram.',
+        ]}
+        doNot={[
+          'Não confunda com Compras (lançamento manual).',
+          'Não confunda com Produtos (catálogo de tipos).',
+        ]}
+        notes='Cada item aqui veio de uma compra. "📦 carregado" = guardado em ciclo passado. "🛒 ciclo" = comprado para um domingo específico.'
+      />
 
-      {showAdd && (
-        <form
-          onSubmit={addItem}
-          className="grid gap-3 rounded-xl border border-primary-100 bg-white p-5 md:grid-cols-2"
-        >
-          <Input
-            label="Nome do produto"
-            value={draft.name ?? ''}
-            onChange={(v) => setDraft({ ...draft, name: v })}
-          />
-          <Input
-            label="Marca"
-            value={draft.brand ?? ''}
-            onChange={(v) => setDraft({ ...draft, brand: v })}
-          />
-          <Input
-            label="Fornecedor"
-            value={draft.supplier ?? ''}
-            onChange={(v) => setDraft({ ...draft, supplier: v })}
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              label="Quantidade"
-              type="number"
-              value={String(draft.quantity ?? 0)}
-              onChange={(v) => setDraft({ ...draft, quantity: parseFloat(v) || 0 })}
-            />
-            <label className="block">
-              <span className="block text-[10px] uppercase tracking-widest text-primary-500/60">
-                Unidade
-              </span>
-              <select
-                value={draft.unit ?? 'un'}
-                onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
-                className="mt-1 w-full rounded-md border border-primary-200 bg-white px-3 py-1.5 text-sm"
+      {/* Ciclo atual em destaque */}
+      <section className="rounded-2xl border-2 border-primary-300 bg-primary-50/40 p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+              Ciclo atual · próximo domingo
+            </p>
+            <h2
+              className="text-2xl italic text-primary-500"
+              style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+            >
+              {formatDateBR(new Date(`${cycleDate}T12:00:00`))}
+            </h2>
+          </div>
+          <div className="text-right text-xs text-primary-500/70">
+            <p>{cycleList.length} compras pra essa data</p>
+            <p>
+              R${' '}
+              {cycleList.reduce((s, p) => s + p.totalCost, 0).toFixed(2)}{' '}
+              investido
+            </p>
+          </div>
+        </div>
+        {cycleList.length === 0 ? (
+          <p className="mt-3 text-xs text-primary-500/60">
+            Nenhuma compra registrada pra esse domingo ainda.{' '}
+            <Link
+              href="/admin/compras"
+              className="underline hover:text-primary-500"
+            >
+              Lançar compras →
+            </Link>
+          </p>
+        ) : (
+          <ul className="mt-3 grid gap-1 md:grid-cols-2">
+            {cycleList.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between rounded-md border border-primary-100 bg-white px-3 py-1.5 text-xs"
               >
-                {UNITS.map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <Input
-            label="Preço unitário R$"
-            type="number"
-            value={String(draft.unitPrice ?? 0)}
-            onChange={(v) => setDraft({ ...draft, unitPrice: parseFloat(v) || 0 })}
-          />
-          <Input
-            label="Estoque mínimo (alerta)"
-            type="number"
-            value={String(draft.minQuantity ?? 0)}
-            onChange={(v) => setDraft({ ...draft, minQuantity: parseFloat(v) || 0 })}
-          />
-          <div className="md:col-span-2">
-            <Input
-              label="Observações"
-              value={draft.notes ?? ''}
-              onChange={(v) => setDraft({ ...draft, notes: v })}
-            />
-          </div>
-          <button
-            type="submit"
-            className="md:col-span-2 rounded-full bg-primary-500 px-4 py-2 text-sm text-white hover:bg-primary-600"
-          >
-            Salvar produto
-          </button>
-        </form>
+                <span className="flex items-center gap-2 text-primary-500/85">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${CATEGORY_DOT[p.productCategory]}`}
+                  />
+                  {p.productName}
+                </span>
+                <span className="text-primary-500/60">
+                  {p.quantity} {p.unit} · R$ {p.totalCost.toFixed(2)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {error && (
+        <p className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">
+          {error}
+        </p>
       )}
 
-      {items.length === 0 ? (
-        <p className="rounded-xl border border-primary-100 bg-white p-8 text-center text-sm text-primary-500/60">
-          Nenhum produto no estoque ainda. Clique em "+ Adicionar produto".
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-primary-100 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-primary-50/60 text-left text-xs uppercase tracking-widest text-primary-500/60">
-              <tr>
-                <th className="px-3 py-2">Produto</th>
-                <th className="px-3 py-2">Marca / Fornecedor</th>
-                <th className="px-3 py-2 text-right">Preço un</th>
-                <th className="px-3 py-2 text-center">Quantidade</th>
-                <th className="px-3 py-2 text-right">Valor total</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it) => {
-                const low = isLowStock(it);
-                return (
+      <section className="grid gap-3 md:grid-cols-3">
+        <KPI label="Itens em estoque" value={String(totals.items)} />
+        <KPI
+          label="Valor investido"
+          value={`R$ ${totals.cost.toFixed(2)}`}
+          tone="good"
+        />
+        <KPI
+          label="Carregado (kept)"
+          value={String(carryoverCount)}
+          tone={carryoverCount > 0 ? 'good' : undefined}
+          hint="sobras de ciclos passados"
+        />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">
+          Estoque por tipo de produto ({aggregates.length})
+        </h2>
+        {loading ? (
+          <p className="text-sm text-primary-500/60">Carregando…</p>
+        ) : aggregates.length === 0 ? (
+          <div className="rounded-xl border border-primary-100 bg-white p-8 text-center text-sm text-primary-500/60">
+            Estoque vazio. Comece registrando suas compras em{' '}
+            <Link
+              href="/admin/compras"
+              className="font-medium text-primary-500 underline"
+            >
+              Compras
+            </Link>
+            .
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-primary-100 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-primary-50/60 text-left text-xs uppercase tracking-widest text-primary-500/60">
+                <tr>
+                  <th className="px-3 py-2">Categoria</th>
+                  <th className="px-3 py-2">Produto</th>
+                  <th className="px-3 py-2 text-right">Quantidade</th>
+                  <th className="px-3 py-2 text-right">Valor</th>
+                  <th className="px-3 py-2">Origem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aggregates.map((a) => (
                   <tr
-                    key={it.id}
-                    className={`border-t border-primary-100 align-top ${low ? 'bg-amber-50/50' : ''}`}
+                    key={a.productId}
+                    className="border-t border-primary-100 align-top"
                   >
                     <td className="px-3 py-2">
-                      <p className="font-medium text-primary-500">{it.name}</p>
-                      {it.notes && (
-                        <p className="text-[11px] text-primary-500/60">{it.notes}</p>
-                      )}
-                      {low && (
-                        <span className="mt-1 inline-block rounded-full bg-amber-200 px-2 py-0.5 text-[10px] text-amber-900">
-                          ⚠ Estoque baixo
+                      <span className="flex items-center gap-1 text-[11px] text-primary-500/70">
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${CATEGORY_DOT[a.productCategory]}`}
+                        />
+                        {CATEGORY_LABEL[a.productCategory]}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-medium text-primary-500">
+                      {a.productName}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-primary-500/85">
+                      {a.quantity} {a.unit}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-primary-500/85">
+                      R$ {a.totalCost.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-primary-500/60">
+                      {a.origins.map((o, i) => (
+                        <span key={i}>
+                          {o.status === 'kept' ? '📦 carregado' : '🛒 ciclo'}{' '}
+                          {formatDateBR(new Date(`${o.date}T12:00:00`))} ·{' '}
+                          {o.qty} {a.unit}
+                          {i < a.origins.length - 1 && <br />}
                         </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-primary-500/70">
-                      <p>{it.brand || '—'}</p>
-                      <p className="text-[11px]">{it.supplier || '—'}</p>
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs">
-                      R$ {it.unitPrice.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-2 text-center text-sm">
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => adjust(it.id, -1)}
-                          className="rounded-md border border-primary-200 px-2 text-primary-500 hover:border-primary-500"
-                        >
-                          −
-                        </button>
-                        <span className="w-12 text-center font-medium text-primary-500">
-                          {it.quantity} {it.unit}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => adjust(it.id, 1)}
-                          className="rounded-md border border-primary-200 px-2 text-primary-500 hover:border-primary-500"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium text-primary-500">
-                      R$ {(it.unitPrice * it.quantity).toFixed(2)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => remove(it.id)}
-                        className="text-[11px] text-rose-600 hover:underline"
-                      >
-                        remover
-                      </button>
+                      ))}
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-white p-4">
+        <p className="flex-1 text-sm text-primary-500/80">
+          Domingo à noite, encerre o ciclo decidindo o destino de cada item:
+          consumido, guardado, uso pessoal ou descarte.
+        </p>
+        <Link
+          href={`/admin/compras/encerrar/${cycleDate}`}
+          className="rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+        >
+          ✓ Encerrar ciclo de{' '}
+          {formatDateBR(new Date(`${cycleDate}T12:00:00`))}
+        </Link>
+      </div>
     </div>
   );
 }
@@ -280,13 +306,19 @@ function KPI({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string;
   value: string;
-  tone?: 'warn';
+  tone?: 'good' | 'warn';
+  hint?: string;
 }) {
   const cls =
-    tone === 'warn' ? 'border-amber-200 bg-amber-50' : 'border-primary-100 bg-white';
+    tone === 'good'
+      ? 'border-emerald-200 bg-emerald-50'
+      : tone === 'warn'
+        ? 'border-amber-200 bg-amber-50'
+        : 'border-primary-100 bg-white';
   return (
     <div className={`rounded-xl border p-4 ${cls}`}>
       <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
@@ -301,32 +333,7 @@ function KPI({
       >
         {value}
       </p>
+      {hint && <p className="mt-1 text-[10px] text-primary-500/50">{hint}</p>}
     </div>
-  );
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  type = 'text',
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="block text-[10px] uppercase tracking-widest text-primary-500/60">
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-primary-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-primary-500"
-      />
-    </label>
   );
 }
