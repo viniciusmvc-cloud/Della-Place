@@ -19,14 +19,6 @@ const HERO_IMAGES = [
     },
   },
   {
-    src: '/images/insta-1.jpeg',
-    alt: 'Pizza com presunto cru, mussarela de búfala e pesto',
-    caption: {
-      text: 'Pizza excelente como sempre. Sucesso pra vocês.',
-      author: 'Sérgio Oliveira',
-    },
-  },
-  {
     src: '/images/pizza-calabria.jpg',
     alt: 'Pizza Calabria na tábua',
     caption: {
