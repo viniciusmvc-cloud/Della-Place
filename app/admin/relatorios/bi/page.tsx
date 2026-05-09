@@ -62,6 +62,25 @@ function classifyIngredient(name: string): ProductCategory {
   return 'cobertura';
 }
 
+// Categoria do sabor (Clássica vs Especial) — espelha o BI do Aurélio.
+// Heurística: sabores com 1 ingrediente principal + base = Clássica;
+// combinações ou ingredientes premium = Especial.
+const FLAVOR_CATEGORY: Record<string, 'CLÁSSICA' | 'ESPECIAL'> = {
+  'margueritha': 'CLÁSSICA',
+  'marguerita': 'CLÁSSICA',
+  'calabria': 'CLÁSSICA',
+  'portuguesa': 'CLÁSSICA',
+  'frango com catupiry': 'CLÁSSICA',
+  'zucchinni e bacon': 'ESPECIAL',
+  '4 fromaggio': 'ESPECIAL',
+  'lombinho com alho poró': 'ESPECIAL',
+  'lombinho com alho poro': 'ESPECIAL',
+  'toscana': 'ESPECIAL',
+};
+function flavorCategory(flavor: string): 'CLÁSSICA' | 'ESPECIAL' {
+  return FLAVOR_CATEGORY[flavor.toLowerCase().trim()] ?? 'ESPECIAL';
+}
+
 export default function BIPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<StoredCustomer[]>([]);
@@ -87,6 +106,58 @@ export default function BIPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // ─── KPIs principais (espelha o BI do Aurélio) ───
+  const kpis = useMemo(() => {
+    const paid = orders.filter((o) => o.status === 'pago');
+    const totalPizzas = paid.reduce((s, o) => s + o.items.length, 0);
+    const receita = paid.reduce((s, o) => s + o.total, 0);
+    const custo = paid.reduce((s, o) => {
+      return s + o.items.reduce((c, it) => {
+        const m = menu.find(
+          (mi) => mi.name.toLowerCase() === it.flavor.toLowerCase(),
+        );
+        return c + (m?.cost ?? 0);
+      }, 0);
+    }, 0);
+    const lucro = receita - custo;
+    const ticketMedio = paid.length > 0 ? receita / paid.length : 0;
+    const foodCostPct = receita > 0 ? (custo / receita) * 100 : 0;
+    return { totalPizzas, receita, custo, lucro, ticketMedio, foodCostPct };
+  }, [orders, menu]);
+
+  // ─── Receita por CATEGORIA (Clássica/Especial) ───
+  const revenueByCategory = useMemo(() => {
+    const totals: Record<string, number> = { 'CLÁSSICA': 0, 'ESPECIAL': 0 };
+    orders
+      .filter((o) => o.status === 'pago')
+      .forEach((o) =>
+        o.items.forEach((it) => {
+          const cat = flavorCategory(it.flavor);
+          totals[cat] += it.price;
+        }),
+      );
+    return Object.entries(totals)
+      .filter(([, v]) => v > 0)
+      .map(([name, value]) => ({ name, value }));
+  }, [orders]);
+
+  // ─── Pizzas por data/evento (todas as datas com pedidos pagos) ───
+  const pizzasByDate = useMemo(() => {
+    const map: Record<string, number> = {};
+    orders
+      .filter((o) => o.status === 'pago')
+      .forEach((o) => {
+        map[o.date] = (map[o.date] || 0) + o.items.length;
+      });
+    return Object.entries(map)
+      .map(([date, pizzas]) => ({
+        date,
+        label: formatDateBR(new Date(`${date}T12:00:00`)).slice(0, 5),
+        pizzas,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [orders]);
 
   // ─── Faturamento por dia (últimos 60 dias) ───
   const revenueByDate = useMemo(() => {
@@ -300,6 +371,74 @@ export default function BIPage() {
         ]}
         notes="Recharts é a biblioteca usada. Os gráficos são responsivos: tente abrir no celular pra confirmar."
       />
+
+      {/* 6 KPIs principais (espelha o BI do Aurélio) */}
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <KPI label="Total Pizzas" value={kpis.totalPizzas.toString()} />
+        <KPI label="Receita Total" value={`R$ ${kpis.receita.toFixed(2)}`} tone="good" />
+        <KPI label="Custo Total" value={`R$ ${kpis.custo.toFixed(2)}`} />
+        <KPI label="Lucro Total" value={`R$ ${kpis.lucro.toFixed(2)}`} tone={kpis.lucro >= 0 ? 'good' : 'bad'} />
+        <KPI label="Ticket Médio" value={`R$ ${kpis.ticketMedio.toFixed(2)}`} />
+        <KPI label="Food Cost %" value={`${kpis.foodCostPct.toFixed(1)}%`} tone={kpis.foodCostPct < 35 ? 'good' : kpis.foodCostPct < 50 ? 'warn' : 'bad'} />
+      </section>
+
+      {/* Pizzas por data/evento + Receita por categoria */}
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-xl border border-primary-100 bg-white p-5">
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+            Pizzas por evento
+          </h3>
+          <p className="mb-4 text-[11px] text-primary-500/60">
+            Total de pizzas vendidas em cada domingo.
+          </p>
+          {pizzasByDate.length === 0 ? (
+            <p className="text-sm text-primary-500/60">Sem ciclos pagos ainda.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={pizzasByDate}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="pizzas" fill={COLORS.primary} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-primary-100 bg-white p-5">
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+            Receita por categoria
+          </h3>
+          <p className="mb-4 text-[11px] text-primary-500/60">
+            Distribuição entre Clássicas e Especiais.
+          </p>
+          {revenueByCategory.length === 0 ? (
+            <p className="text-sm text-primary-500/60">Sem receitas pagas ainda.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={revenueByCategory}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  label={({ name, percent }) =>
+                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                  }
+                >
+                  {revenueByCategory.map((c, i) => (
+                    <Cell key={c.name} fill={i === 0 ? COLORS.primary : COLORS.accent} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v: number) => `R$ ${v.toFixed(2)}`} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </section>
 
       {/* Faturamento ao longo do tempo */}
       <section className="rounded-xl border border-primary-100 bg-white p-5">
@@ -522,6 +661,41 @@ export default function BIPage() {
       <p className="text-center text-[10px] text-primary-500/40">
         BI alimentado por Pedidos, Cardápio, Compras e Estoque · atualiza
         em tempo real conforme você usa o sistema.
+      </p>
+    </div>
+  );
+}
+
+function KPI({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'good' | 'warn' | 'bad';
+}) {
+  const toneCls =
+    tone === 'good'
+      ? 'border-emerald-200 bg-emerald-50'
+      : tone === 'warn'
+        ? 'border-amber-200 bg-amber-50'
+        : tone === 'bad'
+          ? 'border-rose-200 bg-rose-50'
+          : 'border-primary-100 bg-white';
+  return (
+    <div className={`rounded-xl border p-3 shadow-sm ${toneCls}`}>
+      <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+        {label}
+      </p>
+      <p
+        className="mt-1 text-xl text-primary-500"
+        style={{
+          fontFamily: 'var(--font-cormorant), Georgia, serif',
+          fontWeight: 600,
+        }}
+      >
+        {value}
       </p>
     </div>
   );

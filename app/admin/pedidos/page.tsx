@@ -36,13 +36,13 @@ const PAY_TONE: Record<PaymentStatus, string> = {
 };
 
 const CONFIRM_LABEL: Record<ConfirmationStatus, string> = {
-  pendente: 'Pendente',
-  confirmado: 'Confirmado',
-  cancelado: 'Cancelado',
+  pendente: '○ Pendente',
+  confirmado: '✓ Confirmado',
+  cancelado: '✗ Cancelado',
 };
 const PAY_LABEL: Record<PaymentStatus, string> = {
-  pendente: 'Pendente',
-  recebido: 'Recebido',
+  pendente: '○ A receber',
+  recebido: '💰 Recebido',
 };
 
 export default function PedidosPage() {
@@ -293,7 +293,12 @@ function OrderRow({
         {formatDateBR(new Date(`${order.date}T12:00:00`))}
       </td>
       <td className="px-3 py-2">
-        <p className="font-medium text-primary-500">{order.customer.fullName}</p>
+        <p className="font-medium text-primary-500">
+          <span className="mr-2 inline-block rounded bg-primary-500 px-1.5 py-0.5 text-[11px] text-white" style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
+            {firstTime}
+          </span>
+          {order.customer.fullName}
+        </p>
         <a
           href={`https://wa.me/55${order.customer.phone.replace(/\D/g, '')}`}
           target="_blank"
@@ -317,7 +322,7 @@ function OrderRow({
       <td className="px-3 py-2 text-center">
         {order.status === 'cancelado' ? (
           <span
-            className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] ${CONFIRM_TONE[confirmation]}`}
+            className={`inline-block rounded-full border px-3 py-1 text-[12px] ${CONFIRM_TONE[confirmation]}`}
           >
             {CONFIRM_LABEL[confirmation]}
           </span>
@@ -334,7 +339,7 @@ function OrderRow({
                 ? 'Clique pra confirmar o pedido'
                 : 'Clique pra voltar para pendente'
             }
-            className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] transition-colors hover:opacity-80 ${CONFIRM_TONE[confirmation]}`}
+            className={`inline-block cursor-pointer rounded-full border px-3 py-1.5 text-[12px] font-medium shadow-sm transition-all hover:scale-105 hover:shadow-md ${CONFIRM_TONE[confirmation]}`}
           >
             {CONFIRM_LABEL[confirmation]}
           </button>
@@ -362,7 +367,7 @@ function OrderRow({
                 ? 'Clique pra marcar como recebido'
                 : 'Clique pra voltar para pendente de pagamento'
             }
-            className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] transition-colors hover:opacity-80 ${PAY_TONE[payment]}`}
+            className={`inline-block cursor-pointer rounded-full border px-3 py-1.5 text-[12px] font-medium shadow-sm transition-all hover:scale-105 hover:shadow-md ${PAY_TONE[payment]}`}
           >
             {PAY_LABEL[payment]}
           </button>
