@@ -98,8 +98,10 @@ export default function BIPage() {
   // ─── KPIs principais (espelha o BI do Aurélio) ───
   const kpis = useMemo(() => {
     const paid = orders.filter((o) => o.status === 'pago');
+    const upcoming = orders.filter((o) => o.status === 'confirmado');
     const totalPedidos = paid.length;
     const totalPizzas = paid.reduce((s, o) => s + o.items.length, 0);
+    const pizzasUpcoming = upcoming.reduce((s, o) => s + o.items.length, 0);
     const receita = paid.reduce((s, o) => s + o.total, 0);
     const custo = paid.reduce((s, o) => {
       return s + o.items.reduce((c, it) => {
@@ -112,7 +114,7 @@ export default function BIPage() {
     const lucro = receita - custo;
     const ticketMedio = paid.length > 0 ? receita / paid.length : 0;
     const foodCostPct = receita > 0 ? (custo / receita) * 100 : 0;
-    return { totalPedidos, totalPizzas, receita, custo, lucro, ticketMedio, foodCostPct };
+    return { totalPedidos, totalPizzas, pizzasUpcoming, receita, custo, lucro, ticketMedio, foodCostPct };
   }, [orders, menu]);
 
   // ─── Receita por CATEGORIA (lida do menu_items.category) ───
@@ -361,10 +363,11 @@ export default function BIPage() {
         notes="Recharts é a biblioteca usada. Os gráficos são responsivos: tente abrir no celular pra confirmar."
       />
 
-      {/* 7 KPIs principais (espelha o BI do Aurélio) */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
-        <KPI label="Pedidos" value={kpis.totalPedidos.toString()} />
-        <KPI label="Total Pizzas" value={kpis.totalPizzas.toString()} />
+      {/* 8 KPIs principais (espelha o BI do Aurélio + 'A produzir') */}
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
+        <KPI label="Pedidos" value={kpis.totalPedidos.toString()} hint="pagos" />
+        <KPI label="Pizzas pagas" value={kpis.totalPizzas.toString()} hint="entregues" />
+        <KPI label="A produzir" value={kpis.pizzasUpcoming.toString()} hint="ciclo futuro" tone={kpis.pizzasUpcoming > 0 ? 'warn' : undefined} />
         <KPI label="Receita Total" value={formatBRL(kpis.receita)} tone="good" />
         <KPI label="Custo Total" value={formatBRL(kpis.custo)} />
         <KPI label="Lucro Total" value={formatBRL(kpis.lucro)} tone={kpis.lucro >= 0 ? 'good' : 'bad'} />
@@ -660,10 +663,12 @@ function KPI({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string;
   value: string;
   tone?: 'good' | 'warn' | 'bad';
+  hint?: string;
 }) {
   const toneCls =
     tone === 'good'
@@ -687,6 +692,7 @@ function KPI({
       >
         {value}
       </p>
+      {hint && <p className="mt-1 text-[10px] text-primary-500/50">{hint}</p>}
     </div>
   );
 }
