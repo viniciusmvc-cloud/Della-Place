@@ -59,8 +59,11 @@ export default function CardapioPage() {
     }
   }
 
-  async function remove(id: string) {
-    if (!confirm('Remover este sabor do cardápio?')) return;
+  async function remove(id: string, name: string) {
+    const typed = prompt(
+      `Remover "${name}" permanentemente? Digite EXCLUIR (em maiúsculas) pra confirmar:`,
+    );
+    if (typed?.trim().toUpperCase() !== 'EXCLUIR') return;
     setMenu((prev) => prev.filter((m) => m.id !== id));
     await deleteMenuItem(id);
     notify();
@@ -289,14 +292,6 @@ export default function CardapioPage() {
                 >
                   {isExpanded ? '▲ recolher' : '▼ editar'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => remove(m.id)}
-                  className="rounded-full border border-rose-200 px-3 py-1 text-xs text-rose-600 hover:border-rose-500 hover:bg-rose-50"
-                  title="Excluir este sabor do cardápio"
-                >
-                  🗑 Excluir
-                </button>
               </div>
 
               {isExpanded && (
@@ -509,40 +504,31 @@ export default function CardapioPage() {
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-3">
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-primary-100 pt-3">
                     <button
                       type="button"
-                      onClick={() => remove(m.id)}
-                      className="rounded-full border border-rose-200 px-3 py-1 text-xs text-rose-600 hover:border-rose-500 hover:bg-rose-50"
+                      onClick={async () => {
+                        await update(m.id, {
+                          name: m.name,
+                          description: m.description,
+                          price: m.price,
+                          cost: m.cost,
+                          active: m.active,
+                          ingredients: m.ingredients,
+                        });
+                        setExpanded(null);
+                      }}
+                      className="rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
                     >
-                      🗑 Excluir sabor permanentemente
+                      ✓ Salvar e recolher
                     </button>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setExpanded(null)}
-                        className="rounded-full border border-primary-200 px-4 py-1.5 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await update(m.id, {
-                            name: m.name,
-                            description: m.description,
-                            price: m.price,
-                            cost: m.cost,
-                            active: m.active,
-                            ingredients: m.ingredients,
-                          });
-                          setExpanded(null);
-                        }}
-                        className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-600"
-                      >
-                        ✓ Salvar e recolher
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => remove(m.id, m.name)}
+                      className="rounded-full border border-rose-300 bg-rose-50 px-4 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                    >
+                      🗑 Excluir
+                    </button>
                   </div>
                 </div>
               )}
