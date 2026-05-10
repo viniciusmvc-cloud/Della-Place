@@ -199,42 +199,49 @@ function CycleClosingWidget({
     {
       stockPending: number;
       stockPendingValue: number;
+      stockTotal: number;
       paymentPending: number;
       paymentPendingValue: number;
     }
   >();
-
-  purchases
-    .filter((p) => p.status === 'pending')
-    .forEach((p) => {
-      const e = dateBuckets.get(p.productionDate) ?? {
+  const ensure = (date: string) => {
+    let b = dateBuckets.get(date);
+    if (!b) {
+      b = {
         stockPending: 0,
         stockPendingValue: 0,
+        stockTotal: 0,
         paymentPending: 0,
         paymentPendingValue: 0,
       };
+      dateBuckets.set(date, b);
+    }
+    return b;
+  };
+
+  purchases.forEach((p) => {
+    const e = ensure(p.productionDate);
+    e.stockTotal += 1;
+    if (p.status === 'pending') {
       e.stockPending += 1;
       e.stockPendingValue += p.totalCost;
-      dateBuckets.set(p.productionDate, e);
-    });
+    }
+  });
 
   orders
     .filter((o) => o.status === 'pendente' || o.status === 'confirmado')
     .forEach((o) => {
-      const e = dateBuckets.get(o.date) ?? {
-        stockPending: 0,
-        stockPendingValue: 0,
-        paymentPending: 0,
-        paymentPendingValue: 0,
-      };
+      const e = ensure(o.date);
       e.paymentPending += 1;
       e.paymentPendingValue += o.total;
-      dateBuckets.set(o.date, e);
     });
 
   // Pega a data com pendências mais antiga (urgente primeiro)
+  // Inclui também ciclos com paymentPending > 0 mas stockTotal = 0
+  // (Aurélio precisa lançar as compras antes de encerrar)
   const dates = Array.from(dateBuckets.entries())
-    .filter(([, v]) => v.stockPending > 0 || v.paymentPending > 0)
+    .filter(([, v]) => v.stockPending > 0 || v.paymentPending > 0 || v.stockTotal === 0)
+    .filter(([, v]) => v.paymentPending > 0 || v.stockPending > 0) // só mostra se realmente tem o que fazer
     .sort(([a], [b]) => a.localeCompare(b));
 
   if (dates.length === 0) {
@@ -260,7 +267,7 @@ function CycleClosingWidget({
       {dates.map(([date, b]) => {
         const isPast = date <= today;
         const dateLabel = formatDateBR(new Date(`${date}T12:00:00`));
-        const canClose = b.stockPending === 0 && b.paymentPending === 0;
+        const canClose = b.stockPending === 0 && b.paymentPending === 0 && b.stockTotal > 0;
         return (
           <div
             key={date}
@@ -293,11 +300,17 @@ function CycleClosingWidget({
 
             <div className="mb-4 grid gap-3 md:grid-cols-2">
               <Link
-                href={`/admin/estoque/encerrar/${date}`}
+                href={
+                  b.stockTotal === 0
+                    ? `/admin/compras`
+                    : `/admin/estoque/encerrar/${date}`
+                }
                 className={`flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:shadow-md ${
-                  b.stockPending === 0
-                    ? 'border-emerald-300 bg-white'
-                    : 'border-amber-300 bg-white'
+                  b.stockTotal === 0
+                    ? 'border-rose-300 bg-rose-50/40'
+                    : b.stockPending === 0
+                      ? 'border-emerald-300 bg-white'
+                      : 'border-amber-300 bg-white'
                 }`}
               >
                 <div>
@@ -312,7 +325,9 @@ function CycleClosingWidget({
                       fontWeight: 600,
                     }}
                   >
-                    {b.stockPending === 0 ? (
+                    {b.stockTotal === 0 ? (
+                      <span className="text-rose-600">⚠ Lançar compras</span>
+                    ) : b.stockPending === 0 ? (
                       <span className="text-emerald-600">✓ Encerrado</span>
                     ) : (
                       <>
@@ -323,9 +338,14 @@ function CycleClosingWidget({
                       </>
                     )}
                   </p>
+                  {b.stockTotal === 0 && (
+                    <p className="text-xs text-rose-700/80">
+                      Nada lançado pra este ciclo
+                    </p>
+                  )}
                   {b.stockPending > 0 && (
                     <p className="text-xs text-primary-500/70">
-                      R$ {b.stockPendingValue.toFixed(2)} pra decidir
+                      {formatBRL(b.stockPendingValue)} pra decidir
                     </p>
                   )}
                 </div>
