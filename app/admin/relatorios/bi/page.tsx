@@ -110,6 +110,7 @@ export default function BIPage() {
   // ─── KPIs principais (espelha o BI do Aurélio) ───
   const kpis = useMemo(() => {
     const paid = orders.filter((o) => o.status === 'pago');
+    const totalPedidos = paid.length;
     const totalPizzas = paid.reduce((s, o) => s + o.items.length, 0);
     const receita = paid.reduce((s, o) => s + o.total, 0);
     const custo = paid.reduce((s, o) => {
@@ -123,7 +124,7 @@ export default function BIPage() {
     const lucro = receita - custo;
     const ticketMedio = paid.length > 0 ? receita / paid.length : 0;
     const foodCostPct = receita > 0 ? (custo / receita) * 100 : 0;
-    return { totalPizzas, receita, custo, lucro, ticketMedio, foodCostPct };
+    return { totalPedidos, totalPizzas, receita, custo, lucro, ticketMedio, foodCostPct };
   }, [orders, menu]);
 
   // ─── Receita por CATEGORIA (Clássica/Especial) ───
@@ -372,13 +373,14 @@ export default function BIPage() {
         notes="Recharts é a biblioteca usada. Os gráficos são responsivos: tente abrir no celular pra confirmar."
       />
 
-      {/* 6 KPIs principais (espelha o BI do Aurélio) */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      {/* 7 KPIs principais (espelha o BI do Aurélio) */}
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
+        <KPI label="Pedidos" value={kpis.totalPedidos.toString()} />
         <KPI label="Total Pizzas" value={kpis.totalPizzas.toString()} />
-        <KPI label="Receita Total" value={`R$ ${kpis.receita.toFixed(2)}`} tone="good" />
-        <KPI label="Custo Total" value={`R$ ${kpis.custo.toFixed(2)}`} />
-        <KPI label="Lucro Total" value={`R$ ${kpis.lucro.toFixed(2)}`} tone={kpis.lucro >= 0 ? 'good' : 'bad'} />
-        <KPI label="Ticket Médio" value={`R$ ${kpis.ticketMedio.toFixed(2)}`} />
+        <KPI label="Receita Total" value={formatBRL(kpis.receita)} tone="good" />
+        <KPI label="Custo Total" value={formatBRL(kpis.custo)} />
+        <KPI label="Lucro Total" value={formatBRL(kpis.lucro)} tone={kpis.lucro >= 0 ? 'good' : 'bad'} />
+        <KPI label="Ticket Médio" value={formatBRL(kpis.ticketMedio)} />
         <KPI label="Food Cost %" value={`${kpis.foodCostPct.toFixed(1)}%`} tone={kpis.foodCostPct < 35 ? 'good' : kpis.foodCostPct < 50 ? 'warn' : 'bad'} />
       </section>
 
