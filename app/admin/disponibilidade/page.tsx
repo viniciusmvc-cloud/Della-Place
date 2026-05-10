@@ -463,6 +463,42 @@ function BroadcastSheet({
     });
   }
 
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ sent: 0, total: 0 });
+
+  async function sendBulkWhatsApp() {
+    const pending = sortable.filter((c) => !sentSet.has(c.cpf));
+    if (pending.length === 0) {
+      alert('Todos já foram marcados como enviados.');
+      return;
+    }
+    if (
+      !confirm(
+        `Vai abrir ${pending.length} aba${pending.length === 1 ? '' : 's'} do WhatsApp em sequência (com 1s de intervalo). ` +
+          'Pode demorar. Permita pop-ups se o navegador pedir. Continuar?',
+      )
+    )
+      return;
+    setBulkBusy(true);
+    setBulkProgress({ sent: 0, total: pending.length });
+    for (let i = 0; i < pending.length; i++) {
+      const c = pending[i];
+      const link = broadcastWhatsAppLink({
+        customer: c,
+        date: availability.date,
+        startHour: availability.startHour,
+        menu,
+        notes: availability.notes,
+      });
+      window.open(link, '_blank', 'noopener,noreferrer');
+      markSent(c.cpf);
+      setBulkProgress({ sent: i + 1, total: pending.length });
+      // Delay menor entre primeiros (evita popup blocker), maior depois
+      await new Promise((r) => setTimeout(r, i < 3 ? 200 : 1000));
+    }
+    setBulkBusy(false);
+  }
+
   return (
     <div
       role="dialog"
@@ -540,9 +576,21 @@ function BroadcastSheet({
             </div>
           </section>
 
-          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-primary-500/60">
-            WhatsApp por cliente (mensagem completa)
-          </p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-widest text-primary-500/60">
+              WhatsApp por cliente (mensagem completa)
+            </p>
+            <button
+              type="button"
+              onClick={sendBulkWhatsApp}
+              disabled={bulkBusy || sortable.length === 0}
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {bulkBusy
+                ? `Abrindo ${bulkProgress.sent}/${bulkProgress.total}…`
+                : '📢 Abrir todos'}
+            </button>
+          </div>
 
           {sampleMessage && (
             <details className="mb-4 rounded-lg border border-primary-100 bg-primary-50/30 p-3">
