@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { badRequest, safeBody, serverError } from '@/lib/api-helpers';
+import { sendPasswordChangedEmail } from '@/lib/email';
 import {
   getCurrentAdmin,
   getPasswordHash,
@@ -40,6 +41,14 @@ export async function POST(request: Request) {
     }
 
     await setPasswordForEmail(me.email, body.newPassword);
+
+    // Aviso de segurança - notifica que a senha foi alterada
+    try {
+      await sendPasswordChangedEmail(me.email);
+    } catch {
+      // Não bloqueia a alteração se o email falhar
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     return serverError(err);

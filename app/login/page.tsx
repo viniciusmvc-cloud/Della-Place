@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-type Mode = 'password' | 'magic';
+type Mode = 'password' | 'forgot';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [magicSent, setMagicSent] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handlePasswordLogin(e: React.FormEvent) {
@@ -39,7 +39,7 @@ export default function LoginPage() {
     }
   }
 
-  async function handleMagicLink(e: React.FormEvent) {
+  async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
@@ -53,7 +53,7 @@ export default function LoginPage() {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      setMagicSent(true);
+      setResetSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -82,25 +82,26 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {magicSent ? (
+        {resetSent ? (
           <div className="space-y-3 text-center">
             <p className="text-2xl text-emerald-600">✓</p>
             <h1 className="text-lg font-medium text-primary-500">
               Verifique seu email
             </h1>
             <p className="text-sm text-primary-500/70">
-              Se o email estiver autorizado, você receberá um link em até 1
-              minuto. O link é válido por 15 minutos.
+              Se este email estiver cadastrado como administrador, você
+              receberá um link de redefinição em até 1 minuto. O link é válido
+              por 30 minutos.
             </p>
             <button
               type="button"
               onClick={() => {
-                setMagicSent(false);
+                setResetSent(false);
                 setMode('password');
               }}
               className="text-xs text-primary-500/60 hover:text-primary-500"
             >
-              Voltar
+              Voltar pro login
             </button>
           </div>
         ) : mode === 'password' ? (
@@ -109,8 +110,7 @@ export default function LoginPage() {
               Acesso ao painel
             </h1>
             <p className="mb-5 text-sm text-primary-500/70">
-              Entre com email e senha. Se ainda não definiu a senha, use o
-              link por email pra entrar e crie uma em Configurações.
+              Entre com seu email e senha.
             </p>
             <form onSubmit={handlePasswordLogin} className="space-y-3">
               <label className="block">
@@ -154,25 +154,24 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setMode('magic');
+                  setMode('forgot');
                   setError(null);
                 }}
                 className="text-xs text-primary-500/70 hover:text-primary-500"
               >
-                Esqueci a senha · receber link por email
+                Esqueci a senha
               </button>
             </div>
           </>
         ) : (
           <>
             <h1 className="mb-2 text-lg font-medium text-primary-500">
-              Receber link por email
+              Redefinir senha
             </h1>
             <p className="mb-5 text-sm text-primary-500/70">
-              Se você esqueceu a senha ou ainda não criou uma, enviamos um
-              link de acesso de uso único.
+              Digite seu email e enviaremos um link pra criar uma senha nova.
             </p>
-            <form onSubmit={handleMagicLink} className="space-y-3">
+            <form onSubmit={handleForgotPassword} className="space-y-3">
               <label className="block">
                 <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
                   Email
@@ -192,7 +191,7 @@ export default function LoginPage() {
                 disabled={busy || !email}
                 className="w-full rounded-full bg-primary-500 px-4 py-2.5 text-sm text-white transition-opacity disabled:opacity-50"
               >
-                {busy ? 'Enviando...' : 'Enviar link de acesso'}
+                {busy ? 'Enviando...' : 'Enviar link de redefinição'}
               </button>
               {error && <p className="text-xs text-rose-600">{error}</p>}
             </form>

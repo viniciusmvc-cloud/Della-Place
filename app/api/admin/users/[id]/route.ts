@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { badRequest, safeBody, serverError } from '@/lib/api-helpers';
 import { execute, queryOne } from '@/lib/db';
-import { getCurrentAdmin } from '@/lib/server-auth';
+import { sendPasswordResetEmail } from '@/lib/email';
+import { createMagicToken, getCurrentAdmin } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +70,22 @@ export async function PATCH(
       }
       throw err;
     }
+
+    // Se foi reset de senha, manda email com link de redefinição automaticamente
+    if (body.resetPassword === true) {
+      try {
+        const targetEmail = body.email
+          ? body.email.trim().toLowerCase()
+          : target.email;
+        const token = await createMagicToken(targetEmail);
+        const origin = new URL(request.url).origin;
+        const link = `${origin}/reset-password?token=${token}`;
+        await sendPasswordResetEmail(targetEmail, link);
+      } catch {
+        // Não bloqueia o reset se o email falhar
+      }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     return serverError(err);

@@ -132,7 +132,7 @@ export default function ConfiguracoesPage() {
   async function resetPassword(u: AdminUser) {
     if (
       !confirm(
-        `Resetar a senha de ${u.email}? Eles vão precisar entrar com link por email no próximo login e definir nova senha.`,
+        `Resetar a senha de ${u.email}? Vamos enviar um email com link de redefinição pra ele criar uma nova senha.`,
       )
     )
       return;
@@ -147,7 +147,7 @@ export default function ConfiguracoesPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? `HTTP ${res.status}`);
       }
-      notify(`Senha de ${u.email} resetada.`);
+      notify(`Email de redefinição enviado pra ${u.email}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -190,10 +190,11 @@ export default function ConfiguracoesPage() {
           Como funciona o login
         </h2>
         <p className="text-sm text-primary-500/80">
-          O painel aceita <strong>senha</strong> (modo padrão) ou{' '}
-          <strong>link por email</strong> (recuperação se esquecer a senha).
-          Defina sua senha logo abaixo. Para revogar acesso de alguém, basta
-          desativar ou remover o usuário em "Administradores cadastrados".
+          O painel usa <strong>email + senha</strong>. Se esquecer a senha,
+          clique em <em>"Esqueci a senha"</em> na tela de login — enviamos um
+          email com link de redefinição (válido por 30 min). Toda alteração
+          de senha dispara um email de confirmação. Para revogar acesso de
+          alguém, desative ou remova em "Administradores cadastrados".
         </p>
       </section>
 
@@ -435,7 +436,7 @@ function AdminRow({
         type="button"
         onClick={onResetPassword}
         className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs text-amber-700 hover:bg-amber-50"
-        title="Limpa a senha. Pessoa precisa entrar via link por email e definir nova senha."
+        title="Limpa a senha e envia email com link pra esta pessoa criar uma nova senha."
       >
         🔑 Resetar senha
       </button>
