@@ -341,9 +341,6 @@ function OrderRow({
       </td>
       <td className="px-3 py-2">
         <p className="font-medium text-primary-500">
-          <span className="mr-2 inline-block rounded bg-primary-500 px-1.5 py-0.5 text-[11px] text-white" style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}>
-            {firstTime}
-          </span>
           {order.customer.fullName}
         </p>
         <a
@@ -360,8 +357,24 @@ function OrderRow({
         </a>
       </td>
       <td className="px-3 py-2 text-xs text-primary-500/70">
-        {order.items.length}× ·{' '}
-        {order.items.map((it) => titleCase(it.flavor)).join(' / ')}
+        <p className="mb-1 text-[10px] uppercase tracking-widest text-primary-500/50">
+          {order.items.length} pizza{order.items.length === 1 ? '' : 's'}
+        </p>
+        {order.items.length === 1 ? (
+          <p>🍕 {titleCase(order.items[0].flavor)}</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {order.items.map((it, i) => (
+              <li key={i} className="flex items-baseline gap-1">
+                <span className="text-[10px] text-primary-500/50">{i + 1}.</span>
+                <span>🍕 {titleCase(it.flavor)}</span>
+                {it.finish === 'Congelada' && (
+                  <span className="text-[10px] text-blue-700">❄</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </td>
       <td className="px-3 py-2 text-right font-medium text-primary-500">
         {formatBRL(order.total)}

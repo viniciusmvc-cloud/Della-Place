@@ -60,7 +60,7 @@ export default function MiseEnPlacePage() {
     lines.push(`🍕 Total: ${data.totalPizzas} pizzas`);
     lines.push('');
     lines.push('*Pra comprar (faltando):*');
-    const toBuy = data.ingredients.filter((i) => !i.ok);
+    const toBuy = data.ingredients.filter((i) => !i.ok && i.needed > 0);
     if (toBuy.length === 0) {
       lines.push('— nada (estoque suficiente) —');
     } else {
@@ -240,7 +240,9 @@ export default function MiseEnPlacePage() {
               </p>
             ) : (
               <ul className="divide-y divide-primary-100">
-                {data.ingredients.map((ing) => (
+                {data.ingredients
+                  .filter((ing) => ing.needed > 0 || ing.inStock > 0)
+                  .map((ing) => (
                   <li
                     key={ing.stockItemId}
                     className={`flex flex-wrap items-center justify-between gap-3 p-4 ${
@@ -298,14 +300,14 @@ export default function MiseEnPlacePage() {
             )}
           </section>
 
-          {data.ingredients.some((i) => !i.ok) && (
+          {data.ingredients.some((i) => !i.ok && i.needed > 0) && (
             <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <p className="text-sm text-amber-900">
                 <strong>📋 Pra comprar antes do dia:</strong>
               </p>
               <ul className="mt-2 list-disc pl-5 text-sm text-amber-900">
                 {data.ingredients
-                  .filter((i) => !i.ok)
+                  .filter((i) => !i.ok && i.needed > 0)
                   .map((i) => (
                     <li key={i.stockItemId}>
                       {titleCase(i.stockName)} — {formatAmount(i.deficit, i.unit)}
