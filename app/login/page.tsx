@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -67,6 +68,14 @@ export default function LoginPage() {
           className="mb-6 text-center"
           style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
         >
+          <Image
+            src="/icons/dellapace-admin-icon.png"
+            alt="Della Pace Admin"
+            width={96}
+            height={96}
+            priority
+            className="mx-auto mb-3 rounded-full shadow-md"
+          />
           <p className="text-3xl italic text-primary-500">Della Pace</p>
           <p className="mt-1 text-[10px] uppercase tracking-[0.4em] text-accent-500">
             Painel · Admin

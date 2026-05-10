@@ -1,209 +1,292 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import HelpBanner from '@/components/admin/HelpBanner';
 import {
   fetchCustomers,
-  fetchExpenses,
   fetchMenu,
   fetchOrders,
   fetchStock,
 } from '@/lib/api';
-import { type Expense } from '@/lib/expenses';
 import {
   ingredientCost,
   type MenuItem,
   type RecipeIngredient,
 } from '@/lib/menu';
+import { formatBRL } from '@/lib/format';
 import { type Order, type StoredCustomer } from '@/lib/orders';
 import { type StockItem } from '@/lib/stock';
-
-type Block = 'massa' | 'molho' | 'cobertura' | 'operacao';
-
-const BLOCK_LABEL: Record<Block, string> = {
-  massa: 'Massa',
-  molho: 'Molho',
-  cobertura: 'Cobertura',
-  operacao: 'Operação',
-};
-
-const BLOCK_TONE: Record<Block, string> = {
-  massa: 'bg-amber-400',
-  molho: 'bg-rose-400',
-  cobertura: 'bg-emerald-400',
-  operacao: 'bg-blue-400',
-};
-
-function classifyIngredient(name: string): Block {
-  const n = name.toLowerCase();
-  if (/farinh|fermento|levedu/.test(n)) return 'massa';
-  if (/tomate|molho|manjeric|polp|passata/.test(n)) return 'molho';
-  if (/sal\b|azeite|embalag|gás|gas|caixa|papel/.test(n)) return 'operacao';
-  return 'cobertura';
-}
-
-type BlockBreakdown = {
-  massa: number;
-  molho: number;
-  cobertura: number;
-  operacao: number;
-  total: number;
-};
-
-function emptyBreakdown(): BlockBreakdown {
-  return { massa: 0, molho: 0, cobertura: 0, operacao: 0, total: 0 };
-}
-
-function costPerPizzaByBlock(
-  item: MenuItem,
-  stock: StockItem[],
-): BlockBreakdown {
-  const out = emptyBreakdown();
-  if (!item.ingredients || item.ingredients.length === 0) {
-    out.cobertura = item.cost;
-    out.total = item.cost;
-    return out;
-  }
-  for (const ing of item.ingredients as RecipeIngredient[]) {
-    const stk = stock.find((s) => s.id === ing.stockItemId);
-    if (!stk) continue;
-    const cost = ingredientCost(ing, stk);
-    const block = classifyIngredient(stk.name);
-    out[block] += cost;
-    out.total += cost;
-  }
-  return out;
-}
-import {
-  PERIODS,
-  PERIOD_LABEL,
-  inPeriod,
-  type Period,
-} from '@/lib/period';
-import { formatBRL } from '@/lib/format';
 import { formatDateBR } from '@/lib/utils';
 
+const COLORS = {
+  primary: '#2B4C6B',
+  accent: '#C2563E',
+  emerald: '#10b981',
+  amber: '#f59e0b',
+  rose: '#f43f5e',
+  blue: '#3b82f6',
+  slate: '#64748b',
+  purple: '#a855f7',
+  dim: '#cbd5e1',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  pendente: 'Pendente',
+  confirmado: 'Confirmado',
+  pago: 'Pago',
+  cancelado: 'Cancelado',
+};
+
+const STATUS_TONE: Record<string, string> = {
+  pendente: 'bg-amber-50 text-amber-700 border-amber-200',
+  confirmado: 'bg-blue-50 text-blue-700 border-blue-200',
+  pago: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  cancelado: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+function flavorCategory(flavor: string, menu: MenuItem[]): string {
+  const m = menu.find((mi) => mi.name.toLowerCase() === flavor.toLowerCase());
+  return m?.category || 'Sem categoria';
+}
+
+type FilterDim = 'flavor' | 'category' | 'date' | 'status';
+type Filter = { dim: FilterDim; value: string } | null;
+type Tab = 'dashboard' | 'detalhamento';
+type Metric = 'pizzas' | 'receita' | 'lucro';
+
+const METRIC_LABEL: Record<Metric, string> = {
+  pizzas: 'Pizzas',
+  receita: 'Receita',
+  lucro: 'Lucro',
+};
+
+const FILTER_LABEL: Record<FilterDim, string> = {
+  flavor: 'Sabor',
+  category: 'Categoria',
+  date: 'Data',
+  status: 'Status',
+};
+
 export default function RelatoriosPage() {
-  const [period, setPeriod] = useState<Period>('month');
   const [orders, setOrders] = useState<Order[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>('dashboard');
+  const [filter, setFilter] = useState<Filter>(null);
+  const [metric, setMetric] = useState<Metric>('pizzas');
 
   useEffect(() => {
     Promise.all([
       fetchOrders().catch(() => []),
-      fetchExpenses().catch(() => []),
       fetchCustomers().catch(() => []),
       fetchMenu().catch(() => []),
       fetchStock().catch(() => []),
-    ]).then(([o, e, c, m, s]) => {
-      setOrders(o);
-      setExpenses(e);
-      setCustomers(c);
-      setMenu(m);
-      setStock(s);
-    });
+    ])
+      .then(([o, c, m, s]) => {
+        setOrders(o);
+        setCustomers(c);
+        setMenu(m);
+        setStock(s);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  const periodOrders = orders.filter((o) => inPeriod(o.date, period));
-  const periodExp = expenses.filter((e) => inPeriod(e.date, period));
+  const costByFlavor = useMemo(() => {
+    const map = new Map<string, number>();
+    menu.forEach((m) => {
+      let cost = 0;
+      if (m.ingredients?.length) {
+        (m.ingredients as RecipeIngredient[]).forEach((ing) => {
+          const stk = stock.find((s) => s.id === ing.stockItemId);
+          if (stk) cost += ingredientCost(ing, stk);
+        });
+      } else {
+        cost = m.cost;
+      }
+      map.set(m.name.toLowerCase(), cost);
+    });
+    return map;
+  }, [menu, stock]);
 
-  const revenue = periodOrders
-    .filter((o) => o.status === 'pago')
-    .reduce((s, o) => s + o.total, 0);
-  const pizzaCost = periodOrders
-    .filter((o) => o.status !== 'cancelado')
-    .reduce((sum, o) => {
-      return (
-        sum +
-        o.items.reduce((c, it) => {
-          const m = menu.find((mi) => mi.name.toLowerCase() === it.flavor.toLowerCase());
-          return c + (m?.cost ?? 0);
-        }, 0)
-      );
-    }, 0);
-  const opEx = periodExp.reduce((s, e) => s + e.amount, 0);
-  const profit = revenue - pizzaCost - opEx;
+  function toggleFilter(dim: FilterDim, value: string) {
+    setFilter((cur) =>
+      cur && cur.dim === dim && cur.value === value ? null : { dim, value },
+    );
+  }
 
-  const totalPizzas = periodOrders
-    .filter((o) => o.status !== 'cancelado')
-    .reduce((s, o) => s + o.items.length, 0);
-  const avgTicket =
-    periodOrders.filter((o) => o.status !== 'cancelado').length > 0
-      ? revenue /
-        Math.max(
-          periodOrders.filter((o) => o.status === 'pago').length,
-          1,
-        )
-      : 0;
+  type EnrichedItem = {
+    orderId: string;
+    date: string;
+    status: string;
+    customerCpf: string;
+    customerName: string;
+    notes: string;
+    flavor: string;
+    finish: string;
+    time: string;
+    price: number;
+    cost: number;
+    profit: number;
+    category: string;
+  };
 
-  // Sales by Sunday (date-grouped)
-  const byDate = (() => {
-    const map: Record<string, { revenue: number; pizzas: number; orders: number }> =
-      {};
-    periodOrders
-      .filter((o) => o.status !== 'cancelado')
-      .forEach((o) => {
-        if (!map[o.date]) map[o.date] = { revenue: 0, pizzas: 0, orders: 0 };
-        map[o.date].revenue += o.status === 'pago' ? o.total : 0;
-        map[o.date].pizzas += o.items.length;
-        map[o.date].orders += 1;
+  const allItems = useMemo<EnrichedItem[]>(() => {
+    const out: EnrichedItem[] = [];
+    orders.forEach((o) => {
+      o.items.forEach((it) => {
+        const cost = costByFlavor.get(it.flavor.toLowerCase()) ?? 0;
+        out.push({
+          orderId: o.id,
+          date: o.date,
+          status: o.status,
+          customerCpf: o.customer.cpf,
+          customerName: o.customer.fullName || '—',
+          notes: o.notes || '',
+          flavor: it.flavor,
+          finish: it.finish,
+          time: it.time,
+          price: it.price,
+          cost,
+          profit: it.price - cost,
+          category: flavorCategory(it.flavor, menu),
+        });
       });
-    return Object.entries(map).sort((a, b) => (a[0] > b[0] ? 1 : -1));
-  })();
+    });
+    return out;
+  }, [orders, costByFlavor, menu]);
 
-  // Flavor distribution
-  const flavorDist = (() => {
-    const c: Record<string, number> = {};
-    periodOrders
-      .filter((o) => o.status !== 'cancelado')
-      .forEach((o) =>
-        o.items.forEach((it) => (c[it.flavor] = (c[it.flavor] || 0) + 1)),
-      );
-    return Object.entries(c).sort((a, b) => b[1] - a[1]);
-  })();
+  function passesFilter(it: EnrichedItem, exclude?: FilterDim): boolean {
+    if (!filter || filter.dim === exclude) return true;
+    if (filter.dim === 'flavor') return it.flavor === filter.value;
+    if (filter.dim === 'category') return it.category === filter.value;
+    if (filter.dim === 'date') return it.date === filter.value;
+    if (filter.dim === 'status') return it.status === filter.value;
+    return true;
+  }
 
-  // Finish distribution
-  const finishDist = (() => {
-    const c: Record<string, number> = {};
-    periodOrders
-      .filter((o) => o.status !== 'cancelado')
-      .forEach((o) =>
-        o.items.forEach((it) => (c[it.finish] = (c[it.finish] || 0) + 1)),
-      );
-    return Object.entries(c).sort((a, b) => b[1] - a[1]);
-  })();
+  const filteredItems = useMemo(
+    () => allItems.filter((it) => passesFilter(it)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allItems, filter],
+  );
 
-  const maxRevByDate = Math.max(1, ...byDate.map(([, v]) => v.revenue));
+  const kpis = useMemo(() => {
+    const paidItems = filteredItems.filter((i) => i.status === 'pago');
+    const upcomingItems = filteredItems.filter((i) => i.status === 'confirmado');
+    const totalPizzas = filteredItems.filter((i) => i.status !== 'cancelado').length;
+    const pizzasPagas = paidItems.length;
+    const pizzasUpcoming = upcomingItems.length;
+    const receita = paidItems.reduce((s, i) => s + i.price, 0);
+    const custo = paidItems.reduce((s, i) => s + i.cost, 0);
+    const lucro = receita - custo;
+    const orderIds = new Set(paidItems.map((i) => i.orderId));
+    const totalPedidos = orderIds.size;
+    const ticketMedio = totalPedidos > 0 ? receita / totalPedidos : 0;
+    const foodCostPct = receita > 0 ? (custo / receita) * 100 : 0;
+    return {
+      totalPizzas,
+      pizzasPagas,
+      pizzasUpcoming,
+      totalPedidos,
+      receita,
+      custo,
+      lucro,
+      ticketMedio,
+      foodCostPct,
+    };
+  }, [filteredItems]);
 
-  const perPizzaCost = menu
-    .filter((m) => m.active)
-    .map((m) => ({
-      item: m,
-      breakdown: costPerPizzaByBlock(m, stock),
-    }));
+  function metricValue(it: EnrichedItem): number {
+    if (metric === 'pizzas') return it.status === 'cancelado' ? 0 : 1;
+    if (it.status !== 'pago') return 0;
+    if (metric === 'receita') return it.price;
+    return it.profit;
+  }
 
-  const productionTotal = (() => {
-    const totals = emptyBreakdown();
-    periodOrders
-      .filter((o) => o.status !== 'cancelado')
-      .forEach((o) =>
-        o.items.forEach((it) => {
-          const m = menu.find(
-            (mi) => mi.name.toLowerCase() === it.flavor.toLowerCase(),
-          );
-          if (!m) return;
-          const b = costPerPizzaByBlock(m, stock);
-          totals.massa += b.massa;
-          totals.molho += b.molho;
-          totals.cobertura += b.cobertura;
-          totals.operacao += b.operacao;
-          totals.total += b.total;
-        }),
-      );
-    return totals;
-  })();
+  function aggBy(dim: FilterDim) {
+    const items = allItems.filter((it) => passesFilter(it, dim));
+    const map = new Map<string, number>();
+    items.forEach((it) => {
+      const key =
+        dim === 'flavor'
+          ? it.flavor
+          : dim === 'category'
+            ? it.category
+            : dim === 'date'
+              ? it.date
+              : it.status;
+      map.set(key, (map.get(key) || 0) + metricValue(it));
+    });
+    return map;
+  }
+
+  const byFlavor = useMemo(() => {
+    const m = aggBy('flavor');
+    return Array.from(m.entries())
+      .map(([flavor, value]) => ({ flavor, value: Number(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, filter, metric, costByFlavor, menu]);
+
+  const byCategory = useMemo(() => {
+    const items = allItems.filter(
+      (it) => passesFilter(it, 'category') && it.status === 'pago',
+    );
+    const map = new Map<string, number>();
+    items.forEach((it) => {
+      map.set(it.category, (map.get(it.category) || 0) + it.price);
+    });
+    return Array.from(map.entries())
+      .filter(([, v]) => v > 0)
+      .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, filter]);
+
+  const byDate = useMemo(() => {
+    const m = aggBy('date');
+    return Array.from(m.entries())
+      .map(([date, value]) => ({
+        date,
+        label: formatDateBR(new Date(`${date}T12:00:00`)).slice(0, 5),
+        value: Number(value.toFixed(2)),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, filter, metric]);
+
+  const byStatus = useMemo(() => {
+    const m = aggBy('status');
+    const order = ['pago', 'confirmado', 'pendente', 'cancelado'];
+    return Array.from(m.entries())
+      .map(([status, value]) => ({
+        status,
+        label: STATUS_LABEL[status] ?? status,
+        value: Number(value.toFixed(2)),
+      }))
+      .sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, filter, metric]);
+
+  if (loading) {
+    return <p className="text-sm text-primary-500/60">Carregando dados…</p>;
+  }
+
+  const isMoney = metric !== 'pizzas';
+  const fmt = (v: number) => (isMoney ? formatBRL(v) : v.toString());
 
   return (
     <div className="space-y-6">
@@ -213,282 +296,564 @@ export default function RelatoriosPage() {
             className="text-3xl italic text-primary-500"
             style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
           >
-            Relatórios
+            Relatórios · BI
           </h1>
           <p className="text-sm text-primary-500/60">
-            Métricas consolidadas · {PERIOD_LABEL[period]}
+            Interativo, igual o Power BI do Aurélio. Clique em qualquer barra
+            ou fatia pra filtrar tudo.
           </p>
-          <div className="mt-2 inline-flex rounded-full border border-primary-200 bg-white p-1 text-xs">
-            <span className="rounded-full bg-primary-500 px-3 py-1 font-medium text-white">
-              Resumo
-            </span>
-            <a
-              href="/admin/relatorios/bi"
-              className="rounded-full px-3 py-1 text-primary-500/70 hover:text-primary-500"
-            >
-              📊 BI →
-            </a>
-          </div>
         </div>
-        <div className="flex flex-wrap gap-1 rounded-full border border-primary-200 bg-white p-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPeriod(p)}
-              className={
-                period === p
-                  ? 'rounded-full bg-primary-500 px-3 py-1 text-xs text-white'
-                  : 'rounded-full px-3 py-1 text-xs text-primary-500/70 hover:text-primary-500'
-              }
-            >
-              {PERIOD_LABEL[p]}
-            </button>
-          ))}
+
+        <div className="flex rounded-full border border-primary-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setTab('dashboard')}
+            className={`rounded-full px-4 py-1.5 text-xs uppercase tracking-widest transition ${
+              tab === 'dashboard'
+                ? 'bg-primary-500 text-white'
+                : 'text-primary-500/70 hover:text-primary-500'
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('detalhamento')}
+            className={`rounded-full px-4 py-1.5 text-xs uppercase tracking-widest transition ${
+              tab === 'detalhamento'
+                ? 'bg-primary-500 text-white'
+                : 'text-primary-500/70 hover:text-primary-500'
+            }`}
+          >
+            Detalhamento
+          </button>
         </div>
       </header>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KPI label="Faturamento" value={formatBRL(revenue)} tone="good" />
-        <KPI label="Pizzas vendidas" value={String(totalPizzas)} />
-        <KPI label="Ticket médio (pago)" value={formatBRL(avgTicket)} />
-        <KPI label="Lucro líquido" value={formatBRL(profit)} tone={profit >= 0 ? 'good' : 'bad'} />
-        <KPI label="Custos pizzas" value={formatBRL(pizzaCost)} />
-        <KPI label="Despesas" value={formatBRL(opEx)} />
-        <KPI label="Pedidos" value={String(periodOrders.length)} />
-        <KPI label="Clientes únicos" value={String(new Set(periodOrders.map(o => o.customer.cpf)).size)} />
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-primary-100 bg-white p-5">
-          <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
-            Custo por pizza · breakdown
-          </h3>
-          <p className="mb-4 text-[11px] text-primary-500/60">
-            Custo de cada sabor dividido por bloco de produção (massa,
-            molho, cobertura). Inclui também venda, lucro e margem.
-          </p>
-          {perPizzaCost.length === 0 ? (
-            <p className="text-sm text-primary-500/60">
-              Nenhum sabor ativo no cardápio.
-            </p>
-          ) : (
-            <ul className="space-y-4">
-              {perPizzaCost.map(({ item, breakdown }) => {
-                const profit = item.price - breakdown.total;
-                const marginPct =
-                  item.price > 0 ? (profit / item.price) * 100 : 0;
-                return (
-                  <li
-                    key={item.id}
-                    className="rounded-lg border border-primary-100 bg-primary-50/30 p-3"
-                  >
-                    <header className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                      <p
-                        className="text-base text-primary-500"
-                        style={{
-                          fontFamily:
-                            'var(--font-cormorant), Georgia, serif',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {item.name}
-                      </p>
-                      <p className="text-[11px] text-primary-500/70">
-                        Venda R$ {item.price} · Custo R${' '}
-                        {breakdown.total.toFixed(2)} · Lucro R${' '}
-                        {profit.toFixed(2)} ·{' '}
-                        <span
-                          className={
-                            marginPct >= 50
-                              ? 'text-emerald-700'
-                              : marginPct >= 30
-                                ? 'text-amber-700'
-                                : 'text-rose-700'
-                          }
-                        >
-                          {marginPct.toFixed(0)}% margem
-                        </span>
-                      </p>
-                    </header>
-                    <BlockBars b={breakdown} />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+      {filter && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-4 py-2">
+          <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
+            Filtro ativo
+          </span>
+          <span className="rounded-full bg-primary-500 px-3 py-1 text-xs text-white">
+            {FILTER_LABEL[filter.dim]}:{' '}
+            <strong>
+              {filter.dim === 'status'
+                ? STATUS_LABEL[filter.value] ?? filter.value
+                : filter.dim === 'date'
+                  ? formatDateBR(new Date(`${filter.value}T12:00:00`))
+                  : filter.value}
+            </strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => setFilter(null)}
+            className="rounded-full border border-primary-300 bg-white px-3 py-1 text-xs text-primary-500/80 hover:border-rose-400 hover:text-rose-500"
+          >
+            ✕ limpar filtro
+          </button>
         </div>
+      )}
 
-        <div className="rounded-xl border border-primary-100 bg-white p-5">
-          <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
-            Custo total da produção · {PERIOD_LABEL[period]}
-          </h3>
-          <p className="mb-4 text-[11px] text-primary-500/60">
-            Soma do custo de ingredientes de TODAS as pizzas vendidas no
-            período, agrupado por bloco.
-          </p>
-          {productionTotal.total === 0 ? (
-            <p className="text-sm text-primary-500/60">
-              Sem produção no período.
-            </p>
-          ) : (
-            <>
-              <ul className="space-y-2">
-                {(['massa', 'molho', 'cobertura', 'operacao'] as Block[]).map(
-                  (b) => {
-                    const v = productionTotal[b];
-                    const pct =
-                      productionTotal.total > 0
-                        ? (v / productionTotal.total) * 100
-                        : 0;
-                    return (
-                      <li key={b}>
-                        <div className="mb-1 flex justify-between text-xs">
-                          <span className="flex items-center gap-2 text-primary-500">
-                            <span
-                              className={`inline-block h-2 w-2 rounded-full ${BLOCK_TONE[b]}`}
-                            />
-                            {BLOCK_LABEL[b]}
-                          </span>
-                          <span className="text-primary-500/70">
-                            R$ {v.toFixed(2)} · {pct.toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-primary-100">
-                          <div
-                            className={`h-full ${BLOCK_TONE[b]}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </li>
-                    );
-                  },
-                )}
-              </ul>
-              <div className="mt-4 flex items-baseline justify-between border-t border-primary-100 pt-3">
-                <span className="text-xs uppercase tracking-widest text-primary-500/60">
-                  Custo total
-                </span>
-                <span
-                  className="text-2xl text-primary-500"
-                  style={{
-                    fontFamily: 'var(--font-cormorant), Georgia, serif',
-                    fontWeight: 600,
-                  }}
+      {tab === 'dashboard' ? (
+        <>
+          <HelpBanner
+            id="bi"
+            title="BI · Dashboard interativo"
+            whenToFill="Você não preenche aqui. Clique em qualquer barra/fatia pra cross-filter."
+            steps={[
+              'Clique em um sabor (ex: Margherita) pra filtrar TODOS os KPIs e gráficos pra esse sabor.',
+              'Clique numa fatia da pizza (ex: Clássica) pra ver só os clássicos.',
+              'Clique numa data pra ver só aquele domingo. Clique num status pra ver só Pago/Confirmado/etc.',
+              'Use o seletor "Pizzas / Receita / Lucro" pra trocar a métrica dos gráficos por sabor e por evento.',
+              'Clica de novo no mesmo item pra desselecionar.',
+            ]}
+            notes="O cross-filter é como o Power BI: cada gráfico mostra dados respeitando os filtros dos outros gráficos."
+          />
+
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+            <KPI label="Total Pizzas" value={kpis.totalPizzas.toString()} hint={filter ? 'filtrado' : 'não cancelado'} />
+            <KPI label="Receita Total" value={formatBRL(kpis.receita)} tone="good" hint="só pago" />
+            <KPI label="Custo Total" value={formatBRL(kpis.custo)} hint="só pago" />
+            <KPI
+              label="Lucro Total"
+              value={formatBRL(kpis.lucro)}
+              tone={kpis.lucro >= 0 ? 'good' : 'bad'}
+              hint="receita − custo"
+            />
+            <KPI label="Ticket Médio" value={formatBRL(kpis.ticketMedio)} hint="por pedido pago" />
+            <KPI
+              label="Food Cost %"
+              value={`${kpis.foodCostPct.toFixed(1)}%`}
+              tone={
+                kpis.foodCostPct < 35 ? 'good' : kpis.foodCostPct < 50 ? 'warn' : 'bad'
+              }
+              hint="custo ÷ receita"
+            />
+          </section>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
+              Métrica dos gráficos
+            </span>
+            <div className="flex rounded-full border border-primary-200 bg-white p-1">
+              {(['pizzas', 'receita', 'lucro'] as Metric[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMetric(m)}
+                  className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-widest transition ${
+                    metric === m
+                      ? 'bg-primary-500 text-white'
+                      : 'text-primary-500/70 hover:text-primary-500'
+                  }`}
                 >
-                  R$ {productionTotal.total.toFixed(2)}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      </section>
+                  {METRIC_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <section className="rounded-xl border border-primary-100 bg-white p-5">
-        <h3 className="mb-4 text-xs font-medium uppercase tracking-widest text-primary-500/60">
-          Faturamento por domingo
-        </h3>
-        {byDate.length === 0 ? (
-          <p className="text-sm text-primary-500/60">Sem vendas no período.</p>
-        ) : (
-          <ul className="space-y-2">
-            {byDate.map(([date, v]) => {
-              const pct = (v.revenue / maxRevByDate) * 100;
-              return (
-                <li key={date}>
-                  <div className="mb-1 flex justify-between text-xs">
-                    <span className="text-primary-500">
-                      {formatDateBR(new Date(`${date}T12:00:00`))}
-                    </span>
-                    <span className="text-primary-500/60">
-                      R$ {v.revenue} · {v.pizzas} pizzas · {v.orders} pedidos
-                    </span>
-                  </div>
-                  <div className="h-3 w-full overflow-hidden rounded-full bg-primary-100">
-                    <div
-                      className="h-full bg-primary-500"
-                      style={{ width: `${pct}%` }}
+          <section className="grid gap-6 lg:grid-cols-3">
+            <div className="rounded-xl border border-primary-100 bg-white p-5 lg:col-span-2">
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+                {METRIC_LABEL[metric]} por sabor
+              </h3>
+              <p className="mb-4 text-[11px] text-primary-500/60">
+                Clique numa barra pra filtrar tudo nesse sabor.
+              </p>
+              {byFlavor.length === 0 ? (
+                <p className="text-sm text-primary-500/60">Sem dados.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={Math.max(260, byFlavor.length * 32)}>
+                  <BarChart data={byFlavor} layout="vertical" margin={{ left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="flavor"
+                      tick={{ fontSize: 10 }}
+                      width={110}
                     />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                    <Tooltip formatter={(v: number) => fmt(v)} />
+                    <Bar
+                      dataKey="value"
+                      cursor="pointer"
+                      onClick={(d) => toggleFilter('flavor', d.flavor)}
+                    >
+                      {byFlavor.map((d) => {
+                        const selected =
+                          filter?.dim === 'flavor' && filter.value === d.flavor;
+                        const dimmed = filter?.dim === 'flavor' && !selected;
+                        const isProfit = metric === 'lucro';
+                        const baseColor = isProfit
+                          ? d.value >= 0
+                            ? COLORS.emerald
+                            : COLORS.rose
+                          : COLORS.primary;
+                        return (
+                          <Cell
+                            key={d.flavor}
+                            fill={dimmed ? COLORS.dim : baseColor}
+                            opacity={selected ? 1 : 0.95}
+                          />
+                        );
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-primary-100 bg-white p-5">
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-widest text-primary-500/60">
-            Pizzas mais vendidas
-          </h3>
-          <BarList entries={flavorDist} unit="pizzas" />
-        </div>
-        <div className="rounded-xl border border-primary-100 bg-white p-5">
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-widest text-primary-500/60">
-            Acabamento preferido
-          </h3>
-          <BarList entries={finishDist} unit="" />
-        </div>
-      </section>
+            <div className="rounded-xl border border-primary-100 bg-white p-5">
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+                Receita por categoria
+              </h3>
+              <p className="mb-4 text-[11px] text-primary-500/60">
+                Clique numa fatia pra filtrar pra essa categoria.
+              </p>
+              {byCategory.length === 0 ? (
+                <p className="text-sm text-primary-500/60">Sem receitas pagas.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie
+                      data={byCategory}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      label={({ name, percent }) =>
+                        `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                      }
+                      onClick={(_, idx) =>
+                        toggleFilter('category', byCategory[idx].name)
+                      }
+                      cursor="pointer"
+                    >
+                      {byCategory.map((c, i) => {
+                        const selected =
+                          filter?.dim === 'category' && filter.value === c.name;
+                        const dimmed = filter?.dim === 'category' && !selected;
+                        return (
+                          <Cell
+                            key={c.name}
+                            fill={
+                              dimmed
+                                ? COLORS.dim
+                                : i === 0
+                                  ? COLORS.primary
+                                  : i === 1
+                                    ? COLORS.accent
+                                    : COLORS.amber
+                            }
+                          />
+                        );
+                      })}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => formatBRL(v)} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </section>
 
-      <p className="text-center text-[11px] text-primary-500/40">
-        Total de clientes cadastrados (todos os tempos): {customers.length}
-      </p>
+          <section className="grid gap-6 lg:grid-cols-3">
+            <div className="rounded-xl border border-primary-100 bg-white p-5 lg:col-span-2">
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+                {METRIC_LABEL[metric]} por evento
+              </h3>
+              <p className="mb-4 text-[11px] text-primary-500/60">
+                Clique numa data (domingo) pra filtrar todo o BI nessa data.
+              </p>
+              {byDate.length === 0 ? (
+                <p className="text-sm text-primary-500/60">Sem ciclos.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={byDate}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(v: number) => fmt(v)} />
+                    <Bar
+                      dataKey="value"
+                      cursor="pointer"
+                      onClick={(d) => toggleFilter('date', d.date)}
+                    >
+                      {byDate.map((d) => {
+                        const selected =
+                          filter?.dim === 'date' && filter.value === d.date;
+                        const dimmed = filter?.dim === 'date' && !selected;
+                        return (
+                          <Cell
+                            key={d.date}
+                            fill={dimmed ? COLORS.dim : COLORS.accent}
+                          />
+                        );
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-primary-100 bg-white p-5">
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+                {METRIC_LABEL[metric]} por status
+              </h3>
+              <p className="mb-4 text-[11px] text-primary-500/60">
+                Clique pra filtrar pelo status do pedido.
+              </p>
+              {byStatus.length === 0 ? (
+                <p className="text-sm text-primary-500/60">Sem dados.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={byStatus}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(v: number) => fmt(v)} />
+                    <Bar
+                      dataKey="value"
+                      cursor="pointer"
+                      onClick={(d) => toggleFilter('status', d.status)}
+                    >
+                      {byStatus.map((d) => {
+                        const selected =
+                          filter?.dim === 'status' && filter.value === d.status;
+                        const dimmed = filter?.dim === 'status' && !selected;
+                        const color =
+                          d.status === 'pago'
+                            ? COLORS.emerald
+                            : d.status === 'confirmado'
+                              ? COLORS.blue
+                              : d.status === 'pendente'
+                                ? COLORS.amber
+                                : COLORS.rose;
+                        return (
+                          <Cell
+                            key={d.status}
+                            fill={dimmed ? COLORS.dim : color}
+                          />
+                        );
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </section>
+
+          <div className="flex items-center gap-4 pt-4">
+            <div className="h-px flex-1 bg-primary-100" />
+            <p className="text-[10px] uppercase tracking-[0.4em] text-primary-500/50">
+              Outros indicadores
+            </p>
+            <div className="h-px flex-1 bg-primary-100" />
+          </div>
+
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <KPI
+              label="Pedidos"
+              value={kpis.totalPedidos.toString()}
+              hint={filter ? 'filtrado · pago' : 'pago'}
+            />
+            <KPI
+              label="Pizzas pagas"
+              value={kpis.pizzasPagas.toString()}
+              hint="entregues"
+            />
+            <KPI
+              label="A produzir"
+              value={kpis.pizzasUpcoming.toString()}
+              hint="confirmadas"
+              tone={kpis.pizzasUpcoming > 0 ? 'warn' : undefined}
+            />
+            <KPI
+              label="Clientes"
+              value={customers.length.toString()}
+              hint="cadastrados"
+            />
+          </section>
+
+          <p className="text-center text-[10px] text-primary-500/40">
+            Clique em qualquer item dos gráficos pra cross-filter · clique de
+            novo pra remover.
+          </p>
+        </>
+      ) : (
+        <DetailTable items={filteredItems} filterLabel={filter} />
+      )}
     </div>
   );
 }
 
-function BlockBars({ b }: { b: BlockBreakdown }) {
-  const blocks: Block[] = ['massa', 'molho', 'cobertura', 'operacao'];
-  return (
-    <ul className="space-y-1.5">
-      {blocks.map((bl) => {
-        const v = b[bl];
-        if (v === 0) return null;
-        const pct = b.total > 0 ? (v / b.total) * 100 : 0;
-        return (
-          <li key={bl} className="grid grid-cols-[80px_1fr_auto] items-center gap-2 text-[11px]">
-            <span className="text-primary-500/70">{BLOCK_LABEL[bl]}</span>
-            <div className="h-2 overflow-hidden rounded-full bg-white">
-              <div
-                className={`h-full ${BLOCK_TONE[bl]}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="tabular-nums text-primary-500/80">
-              R$ {v.toFixed(2)}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
+function DetailTable({
+  items,
+  filterLabel,
+}: {
+  items: Array<{
+    orderId: string;
+    customerName: string;
+    flavor: string;
+    status: string;
+    notes: string;
+    time: string;
+    date: string;
+    price: number;
+  }>;
+  filterLabel: Filter;
+}) {
+  const [search, setSearch] = useState('');
 
-function BarList({ entries, unit }: { entries: [string, number][]; unit: string }) {
-  if (entries.length === 0)
-    return <p className="text-sm text-primary-500/60">Sem dados no período.</p>;
-  const total = entries.reduce((s, [, n]) => s + n, 0);
+  type Row = {
+    orderId: string;
+    cliente: string;
+    produto: string;
+    quantidade: number;
+    status: string;
+    observacao: string;
+    horario: string;
+    mes: string;
+    dia: string;
+    date: string;
+    receita: number;
+  };
+
+  const rows = useMemo<Row[]>(() => {
+    const map = new Map<string, Row>();
+    items.forEach((it) => {
+      const key = `${it.orderId}|${it.flavor}`;
+      const e = map.get(key);
+      if (e) {
+        e.quantidade += 1;
+        e.receita += it.price;
+      } else {
+        const d = new Date(`${it.date}T12:00:00`);
+        const mes = d.toLocaleDateString('pt-BR', { month: 'long' });
+        const dia = d.getDate().toString().padStart(2, '0');
+        map.set(key, {
+          orderId: it.orderId,
+          cliente: it.customerName,
+          produto: it.flavor,
+          quantidade: 1,
+          status: it.status,
+          observacao: it.notes,
+          horario: it.time,
+          mes,
+          dia,
+          date: it.date,
+          receita: it.price,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return (b.horario || '').localeCompare(a.horario || '');
+    });
+  }, [items]);
+
+  const filtered = rows.filter((r) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      r.cliente.toLowerCase().includes(q) ||
+      r.produto.toLowerCase().includes(q) ||
+      r.status.toLowerCase().includes(q) ||
+      r.observacao.toLowerCase().includes(q)
+    );
+  });
+
+  function exportCSV() {
+    const header = [
+      'Cliente',
+      'Produto',
+      'Quantidade',
+      'Receita',
+      'Status',
+      'Observação',
+      'Horário',
+      'Mês',
+      'Dia',
+      'Data',
+    ];
+    const lines = [
+      header.join(','),
+      ...filtered.map((r) =>
+        [
+          r.cliente,
+          r.produto,
+          r.quantidade,
+          r.receita.toFixed(2),
+          STATUS_LABEL[r.status] ?? r.status,
+          r.observacao,
+          r.horario,
+          r.mes,
+          r.dia,
+          r.date,
+        ]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(','),
+      ),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bi-detalhamento-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
-    <ul className="space-y-2">
-      {entries.map(([k, n]) => {
-        const pct = total > 0 ? (n / total) * 100 : 0;
-        return (
-          <li key={k}>
-            <div className="mb-1 flex justify-between text-xs">
-              <span className="text-primary-500">{k}</span>
-              <span className="text-primary-500/60">
-                {n} {unit} · {pct.toFixed(0)}%
-              </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-primary-100">
-              <div className="h-full bg-accent-500" style={{ width: `${pct}%` }} />
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    <section className="space-y-3">
+      <HelpBanner
+        id="bi-detail"
+        title="BI · Detalhamento"
+        whenToFill="Página 2 do BI do Aurélio. Cross-filter aplicado também aqui."
+        steps={[
+          'Cada linha = 1 sabor de 1 pedido. Pedido com 3 pizzas distintas vira 3 linhas.',
+          'Quantidade soma pizzas iguais do mesmo pedido (mesmo sabor).',
+          'Se você setar um filtro no Dashboard (ex: Margherita), só linhas desse sabor aparecem aqui.',
+          'Use a busca pra filtrar por cliente/sabor/status/observação. Botão "Exportar CSV" baixa o que está filtrado.',
+        ]}
+        notes="Ordenado da pizza mais recente pra mais antiga."
+      />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar cliente, sabor, status…"
+          className="flex-1 min-w-[220px] rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+        />
+        <button
+          type="button"
+          onClick={exportCSV}
+          className="rounded-full border border-primary-200 bg-white px-4 py-2 text-xs uppercase tracking-widest text-primary-500/80 hover:border-primary-500 hover:text-primary-500"
+        >
+          Exportar CSV
+        </button>
+        <p className="text-[11px] text-primary-500/60">
+          {filtered.length} de {rows.length} linhas
+          {filterLabel ? ' · cross-filter ativo' : ''}
+        </p>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-primary-100 bg-white">
+        <table className="min-w-full text-sm">
+          <thead className="bg-primary-50/50 text-[10px] uppercase tracking-widest text-primary-500/70">
+            <tr>
+              <th className="px-3 py-2 text-left">Cliente</th>
+              <th className="px-3 py-2 text-left">Produto</th>
+              <th className="px-3 py-2 text-center">Qtd</th>
+              <th className="px-3 py-2 text-right">Receita</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Observação</th>
+              <th className="px-3 py-2 text-left">Horário</th>
+              <th className="px-3 py-2 text-left">Mês</th>
+              <th className="px-3 py-2 text-center">Dia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="px-3 py-6 text-center text-primary-500/50">
+                  Sem pedidos {search || filterLabel ? 'com esse filtro' : 'cadastrados'}.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((r, i) => (
+                <tr
+                  key={`${r.orderId}-${r.produto}-${i}`}
+                  className="border-t border-primary-100/60 hover:bg-primary-50/30"
+                >
+                  <td className="px-3 py-2 text-primary-500">{r.cliente}</td>
+                  <td className="px-3 py-2 text-primary-500/80">{r.produto}</td>
+                  <td className="px-3 py-2 text-center text-primary-500">{r.quantidade}</td>
+                  <td className="px-3 py-2 text-right text-primary-500/80">{formatBRL(r.receita)}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-widest ${
+                        STATUS_TONE[r.status] ?? 'border-primary-200 bg-white'
+                      }`}
+                    >
+                      {STATUS_LABEL[r.status] ?? r.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-primary-500/70">{r.observacao || '—'}</td>
+                  <td className="px-3 py-2 text-primary-500/70">{r.horario || '—'}</td>
+                  <td className="px-3 py-2 text-primary-500/70 capitalize">{r.mes}</td>
+                  <td className="px-3 py-2 text-center text-primary-500">{r.dia}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -496,24 +861,28 @@ function KPI({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string;
   value: string;
-  tone?: 'good' | 'bad';
+  tone?: 'good' | 'warn' | 'bad';
+  hint?: string;
 }) {
-  const cls =
+  const toneCls =
     tone === 'good'
       ? 'border-emerald-200 bg-emerald-50'
-      : tone === 'bad'
-        ? 'border-rose-200 bg-rose-50'
-        : 'border-primary-100 bg-white';
+      : tone === 'warn'
+        ? 'border-amber-200 bg-amber-50'
+        : tone === 'bad'
+          ? 'border-rose-200 bg-rose-50'
+          : 'border-primary-100 bg-white';
   return (
-    <div className={`rounded-xl border p-4 ${cls}`}>
+    <div className={`rounded-xl border p-3 shadow-sm ${toneCls}`}>
       <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
         {label}
       </p>
       <p
-        className="mt-1 text-2xl text-primary-500"
+        className="mt-1 text-xl text-primary-500"
         style={{
           fontFamily: 'var(--font-cormorant), Georgia, serif',
           fontWeight: 600,
@@ -521,6 +890,7 @@ function KPI({
       >
         {value}
       </p>
+      {hint && <p className="mt-1 text-[10px] text-primary-500/50">{hint}</p>}
     </div>
   );
 }

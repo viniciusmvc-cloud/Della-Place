@@ -6,10 +6,16 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Della Pace · Login Admin',
   manifest: '/admin/manifest.webmanifest',
+  icons: {
+    icon: '/icons/dellapace-admin-icon.png',
+    shortcut: '/icons/dellapace-admin-icon.png',
+    apple: '/icons/dellapace-admin-icon.png',
+  },
   appleWebApp: {
     capable: true,
     title: 'Della Pace Admin',
     statusBarStyle: 'default',
+    startupImage: '/icons/dellapace-admin-icon.png',
   },
 };
 
