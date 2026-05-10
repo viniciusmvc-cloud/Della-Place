@@ -96,18 +96,36 @@ export function ingredientCost(
   return amountInStockUnit * stock.unitPrice;
 }
 
-export function calcRecipeCost(item: MenuItem, stock: StockItem[]): number {
+export function calcRecipeCost(
+  item: MenuItem,
+  stock: StockItem[],
+  menu: MenuItem[] = [],
+  visited: Set<string> = new Set(),
+): number {
   if (!item.ingredients || item.ingredients.length === 0) return item.cost;
+  if (visited.has(item.id)) return 0; // proteção contra ciclos
+  visited.add(item.id);
   return item.ingredients.reduce((sum, ing) => {
+    // Sub-receita (componente como Disco/Concha): expande recursivamente
+    if (ing.componentMenuId) {
+      const comp = menu.find((m) => m.id === ing.componentMenuId);
+      if (!comp) return sum;
+      return sum + ing.amount * calcRecipeCost(comp, stock, menu, visited);
+    }
+    // Ingrediente normal (vinculado ao stock_items)
     const stk = stock.find((s) => s.id === ing.stockItemId);
     if (!stk) return sum;
     return sum + ingredientCost(ing, stk);
   }, 0);
 }
 
-export function effectiveCost(item: MenuItem, stock: StockItem[]): number {
+export function effectiveCost(
+  item: MenuItem,
+  stock: StockItem[],
+  menu: MenuItem[] = [],
+): number {
   if (item.ingredients && item.ingredients.length > 0) {
-    return calcRecipeCost(item, stock);
+    return calcRecipeCost(item, stock, menu);
   }
   return item.cost;
 }

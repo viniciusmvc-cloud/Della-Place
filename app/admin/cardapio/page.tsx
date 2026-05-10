@@ -70,18 +70,44 @@ export default function CardapioPage() {
   }
 
   async function add() {
+    const hasDisco = menu.some((m) => m.id === 'base-disco');
+    const hasConcha = menu.some((m) => m.id === 'base-concha');
+    const baseIngredients: RecipeIngredient[] = [];
+    if (hasDisco) {
+      baseIngredients.push({
+        stockItemId: '',
+        productId: null,
+        componentMenuId: 'base-disco',
+        amount: 1,
+        unit: 'un',
+      });
+    }
+    if (hasConcha) {
+      baseIngredients.push({
+        stockItemId: '',
+        productId: null,
+        componentMenuId: 'base-concha',
+        amount: 1,
+        unit: 'un',
+      });
+    }
     const novo: MenuItem = {
       id: newMenuId(),
       name: 'Novo sabor',
       description: '',
       price: 0,
       cost: 0,
-      ingredients: [],
+      ingredients: baseIngredients,
       active: true,
+      type: 'pizza',
     };
     setMenu((prev) => [...prev, novo]);
     setExpanded(novo.id);
     await createMenuItem(novo);
+    if (baseIngredients.length > 0) {
+      // Persiste os ingredientes-base via PATCH (createMenuItem só cria o item)
+      await updateMenuItem(novo.id, { ingredients: baseIngredients });
+    }
     notify();
   }
 
@@ -237,7 +263,7 @@ export default function CardapioPage() {
               </p>
             ) : (
               group.items.map((m) => {
-                const recipeCost = calcRecipeCost(m, stock);
+                const recipeCost = calcRecipeCost(m, stock, menu);
                 const usingRecipe = (m.ingredients?.length ?? 0) > 0;
                 const cost = usingRecipe ? recipeCost : m.cost;
                 const margin = calcMargin({ price: m.price, cost });
@@ -369,6 +395,40 @@ export default function CardapioPage() {
                     ) : (
                       <ul className="space-y-2">
                         {(m.ingredients ?? []).map((ing, idx) => {
+                          // Componente (Disco/Concha) — renderiza diferente
+                          if (ing.componentMenuId) {
+                            const comp = menu.find((mi) => mi.id === ing.componentMenuId);
+                            const compCost = comp ? calcRecipeCost(comp, stock, menu) : 0;
+                            const isDisco = ing.componentMenuId === 'base-disco';
+                            return (
+                              <li
+                                key={idx}
+                                className={`flex items-center gap-2 rounded-md border-2 p-2 text-sm ${
+                                  isDisco
+                                    ? 'border-amber-300 bg-amber-50'
+                                    : 'border-rose-300 bg-rose-50'
+                                }`}
+                              >
+                                <span className="text-lg">{isDisco ? '🍞' : '🍅'}</span>
+                                <div className="flex-1">
+                                  <p className="font-medium text-primary-500">
+                                    {comp?.name ?? ing.componentMenuId}
+                                  </p>
+                                  <p className="text-[10px] text-primary-500/60">
+                                    Receita base · 1 por pizza · custo R$ {compCost.toFixed(2)}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeIngredient(m.id, idx)}
+                                  className="rounded-full border border-rose-200 px-2 py-1 text-[10px] text-rose-600 hover:bg-rose-50"
+                                  title="Remover (não recomendado)"
+                                >
+                                  ×
+                                </button>
+                              </li>
+                            );
+                          }
                           const stk = stock.find((s) => s.id === ing.stockItemId);
                           const cost = stk ? ingredientCost(ing, stk) : 0;
                           const incompat = stk && !isCompatible(ing.unit, stk.unit);
