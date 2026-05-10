@@ -17,6 +17,22 @@ ALTER TABLE menu_items
 ALTER TABLE recipe_ingredients
   ADD COLUMN IF NOT EXISTS component_menu_id VARCHAR(50) DEFAULT NULL;
 
+-- Componentes não têm stock_item_id real — relaxa o FK e permite NULL.
+-- (idempotente: roda só se a constraint ainda existe)
+SET @drop_fk := (
+  SELECT IF(COUNT(*) > 0,
+    'ALTER TABLE recipe_ingredients DROP FOREIGN KEY fk_recipe_stock',
+    'SELECT 1')
+  FROM information_schema.TABLE_CONSTRAINTS
+  WHERE CONSTRAINT_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'recipe_ingredients'
+    AND CONSTRAINT_NAME = 'fk_recipe_stock'
+);
+PREPARE stmt FROM @drop_fk; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+ALTER TABLE recipe_ingredients
+  MODIFY COLUMN stock_item_id VARCHAR(50) NULL;
+
 -- ═══ 2. INSERE OS 2 ITENS-BASE em menu_items ═══════════════════════
 -- active=0 → não aparecem no cardápio do cliente
 -- type='base' → marca como sub-receita
@@ -50,7 +66,7 @@ DELETE FROM recipe_ingredients
 
 -- Adiciona 1 disco + 1 concha em cada uma das 8 pizzas
 INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, product_id, amount, unit, component_menu_id)
-SELECT mi.id, '', NULL, 1, 'un', 'base-disco'
+SELECT mi.id, NULL, NULL, 1, 'un', 'base-disco'
 FROM menu_items mi
 WHERE mi.id IN ('margueritha','calabria','zucchinni-e-bacon','4-fromaggio','lombinho-com-alho-poro','frango-com-catupiry','portuguesa','toscana')
   AND NOT EXISTS (
@@ -59,7 +75,7 @@ WHERE mi.id IN ('margueritha','calabria','zucchinni-e-bacon','4-fromaggio','lomb
   );
 
 INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, product_id, amount, unit, component_menu_id)
-SELECT mi.id, '', NULL, 1, 'un', 'base-concha'
+SELECT mi.id, NULL, NULL, 1, 'un', 'base-concha'
 FROM menu_items mi
 WHERE mi.id IN ('margueritha','calabria','zucchinni-e-bacon','4-fromaggio','lombinho-com-alho-poro','frango-com-catupiry','portuguesa','toscana')
   AND NOT EXISTS (
