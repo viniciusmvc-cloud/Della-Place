@@ -569,6 +569,34 @@ function RegisterForm({
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [blockApt, setBlockApt] = useState('');
+  const [cep, setCep] = useState('');
+  const [number, setNumber] = useState('');
+  const [cepBusy, setCepBusy] = useState(false);
+  const [cepMsg, setCepMsg] = useState<string | null>(null);
+
+  async function lookupCep() {
+    const clean = cep.replace(/\D/g, '');
+    if (clean.length !== 8) {
+      setCepMsg('CEP precisa de 8 dígitos.');
+      return;
+    }
+    setCepBusy(true);
+    setCepMsg(null);
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const j = await r.json();
+      if (j.erro || !j.logradouro) {
+        setCepMsg('CEP não encontrado.');
+        return;
+      }
+      const addr = `${j.logradouro}${number ? ', ' + number : ''}, ${j.bairro}, ${j.localidade}-${j.uf}`;
+      setAddress(addr);
+    } catch {
+      setCepMsg('Erro ao consultar CEP.');
+    } finally {
+      setCepBusy(false);
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -619,6 +647,36 @@ function RegisterForm({
           placeholder="Email (opcional)"
           className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
         />
+        <div className="rounded-md border border-primary-100 bg-primary-50/30 p-2">
+          <p className="mb-1 text-[10px] uppercase tracking-widest text-primary-500/60">
+            Buscar endereço por CEP (opcional)
+          </p>
+          <div className="flex flex-wrap gap-1">
+            <input
+              type="text"
+              value={cep}
+              onChange={(e) => setCep(e.target.value)}
+              placeholder="CEP"
+              className="w-28 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-sm"
+            />
+            <input
+              type="text"
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              placeholder="Nº"
+              className="w-16 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-sm"
+            />
+            <button
+              type="button"
+              onClick={lookupCep}
+              disabled={cepBusy}
+              className="rounded-full bg-primary-500 px-3 py-1.5 text-xs text-white disabled:opacity-50"
+            >
+              {cepBusy ? '…' : '🔍 Buscar'}
+            </button>
+          </div>
+          {cepMsg && <p className="mt-1 text-xs text-rose-700">{cepMsg}</p>}
+        </div>
         <input
           type="text"
           required
