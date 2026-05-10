@@ -4,9 +4,12 @@ import { convertAmount, isCompatible } from '@/lib/units';
 export type RecipeIngredient = {
   stockItemId: string;
   productId?: number | null;
+  componentMenuId?: string | null;
   amount: number;
   unit: string;
 };
+
+export type MenuItemType = 'pizza' | 'base';
 
 export type MenuItem = {
   id: string;
@@ -16,6 +19,7 @@ export type MenuItem = {
   cost: number;
   ingredients: RecipeIngredient[];
   active: boolean;
+  type?: MenuItemType;
 };
 
 export const DEFAULT_MENU: MenuItem[] = [

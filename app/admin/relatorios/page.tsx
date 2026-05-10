@@ -79,6 +79,7 @@ import {
   inPeriod,
   type Period,
 } from '@/lib/period';
+import { formatBRL } from '@/lib/format';
 import { formatDateBR } from '@/lib/utils';
 
 export default function RelatoriosPage() {
@@ -248,12 +249,12 @@ export default function RelatoriosPage() {
       </header>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KPI label="Faturamento" value={`R$ ${revenue}`} tone="good" />
+        <KPI label="Faturamento" value={formatBRL(revenue)} tone="good" />
         <KPI label="Pizzas vendidas" value={String(totalPizzas)} />
-        <KPI label="Ticket médio (pago)" value={`R$ ${avgTicket.toFixed(2)}`} />
-        <KPI label="Lucro líquido" value={`R$ ${profit}`} tone={profit >= 0 ? 'good' : 'bad'} />
-        <KPI label="Custos pizzas" value={`R$ ${pizzaCost}`} />
-        <KPI label="Despesas" value={`R$ ${opEx}`} />
+        <KPI label="Ticket médio (pago)" value={formatBRL(avgTicket)} />
+        <KPI label="Lucro líquido" value={formatBRL(profit)} tone={profit >= 0 ? 'good' : 'bad'} />
+        <KPI label="Custos pizzas" value={formatBRL(pizzaCost)} />
+        <KPI label="Despesas" value={formatBRL(opEx)} />
         <KPI label="Pedidos" value={String(periodOrders.length)} />
         <KPI label="Clientes únicos" value={String(new Set(periodOrders.map(o => o.customer.cpf)).size)} />
       </section>

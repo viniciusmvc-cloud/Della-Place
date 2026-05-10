@@ -12,6 +12,7 @@ type MenuRow = {
   price: string;
   cost: string;
   active: number;
+  type: string | null;
 };
 
 type IngredientRow = {
@@ -19,18 +20,31 @@ type IngredientRow = {
   menu_item_id: string;
   stock_item_id: string;
   product_id: number | null;
+  component_menu_id: string | null;
   amount: string;
   unit: string;
 };
 
 export async function GET() {
   try {
-    const items = await query<MenuRow>(
-      'SELECT id, name, description, price, cost, active FROM menu_items ORDER BY name',
-    );
-    const ingredients = await query<IngredientRow>(
-      'SELECT id, menu_item_id, stock_item_id, product_id, amount, unit FROM recipe_ingredients',
-    );
+    let items: MenuRow[];
+    let ingredients: IngredientRow[];
+    try {
+      items = await query<MenuRow>(
+        'SELECT id, name, description, price, cost, active, type FROM menu_items ORDER BY name',
+      );
+      ingredients = await query<IngredientRow>(
+        'SELECT id, menu_item_id, stock_item_id, product_id, component_menu_id, amount, unit FROM recipe_ingredients',
+      );
+    } catch {
+      // Fallback: schema antigo sem type/component_menu_id
+      items = await query<MenuRow>(
+        'SELECT id, name, description, price, cost, active FROM menu_items ORDER BY name',
+      );
+      ingredients = await query<IngredientRow>(
+        'SELECT id, menu_item_id, stock_item_id, product_id, amount, unit FROM recipe_ingredients',
+      );
+    }
 
     const result = items.map((m) => ({
       id: m.id,
@@ -39,11 +53,13 @@ export async function GET() {
       price: Number(m.price),
       cost: Number(m.cost),
       active: m.active === 1,
+      type: (m.type === 'base' ? 'base' : 'pizza') as 'pizza' | 'base',
       ingredients: ingredients
         .filter((ing) => ing.menu_item_id === m.id)
         .map((ing) => ({
           stockItemId: ing.stock_item_id,
           productId: ing.product_id,
+          componentMenuId: ing.component_menu_id ?? null,
           amount: Number(ing.amount),
           unit: ing.unit,
         })),

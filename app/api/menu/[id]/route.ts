@@ -20,6 +20,7 @@ export async function PATCH(
       ingredients?: {
         stockItemId: string;
         productId?: number | null;
+        componentMenuId?: string | null;
         amount: number;
         unit: string;
       }[];
@@ -63,10 +64,25 @@ export async function PATCH(
           [id],
         );
         for (const ing of body.ingredients) {
-          await conn.query(
-            'INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, product_id, amount, unit) VALUES (?, ?, ?, ?, ?)',
-            [id, ing.stockItemId, ing.productId ?? null, ing.amount, ing.unit],
-          );
+          try {
+            await conn.query(
+              'INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, product_id, component_menu_id, amount, unit) VALUES (?, ?, ?, ?, ?, ?)',
+              [
+                id,
+                ing.stockItemId,
+                ing.productId ?? null,
+                ing.componentMenuId ?? null,
+                ing.amount,
+                ing.unit,
+              ],
+            );
+          } catch {
+            // Fallback: schema antigo sem component_menu_id
+            await conn.query(
+              'INSERT INTO recipe_ingredients (menu_item_id, stock_item_id, product_id, amount, unit) VALUES (?, ?, ?, ?, ?)',
+              [id, ing.stockItemId, ing.productId ?? null, ing.amount, ing.unit],
+            );
+          }
         }
       }
     });
