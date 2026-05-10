@@ -116,8 +116,6 @@ export default function AdminDashboard() {
         notes="Linha do tempo da semana: Cliente reserva (Pedidos) → Mise en place calcula o que comprar → Aurélio lança Compras → Domingo: produção → Encerrar ciclo decide o destino do que sobrou."
       />
 
-      <AttentionPanel />
-
       <CycleClosingWidget
         purchases={allPurchases}
         orders={orders}
@@ -182,6 +180,7 @@ export default function AdminDashboard() {
         />
       </section>
 
+      <AttentionPanel />
     </div>
   );
 }
