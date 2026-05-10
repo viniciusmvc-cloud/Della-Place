@@ -371,11 +371,7 @@ function CustomerDrawer({
     address: string;
     blockApt: string;
   } | null>(null);
-  const [cep, setCep] = useState('');
-  const [number, setNumber] = useState('');
-  const [cepBusy, setCepBusy] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/customers/${encodeURIComponent(cpf)}`)
@@ -383,30 +379,6 @@ function CustomerDrawer({
       .then(setData)
       .catch(() => onClose());
   }, [cpf, onClose]);
-
-  async function lookupCep() {
-    const clean = cep.replace(/\D/g, '');
-    if (clean.length !== 8) {
-      setMsg('CEP precisa ter 8 dígitos.');
-      return;
-    }
-    setCepBusy(true);
-    setMsg(null);
-    try {
-      const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
-      const j = await r.json();
-      if (j.erro || !j.logradouro) {
-        setMsg('CEP não encontrado.');
-        return;
-      }
-      const addr = `${j.logradouro}, ${number || ''}, ${j.bairro}, ${j.localidade}-${j.uf}`.replace(', ,', ',');
-      setData((d) => (d ? { ...d, address: addr } : d));
-    } catch {
-      setMsg('Erro ao consultar CEP. Tente de novo.');
-    } finally {
-      setCepBusy(false);
-    }
-  }
 
   async function save() {
     if (!data) return;
@@ -474,39 +446,6 @@ function CustomerDrawer({
               <Field label="Telefone" value={data.phone} onChange={(v) => setData({ ...data, phone: v })} placeholder="(71) 99999-9999" />
               <Field label="Email (opcional)" value={data.email} onChange={(v) => setData({ ...data, email: v })} />
               <Field label="Bloco/apto" value={data.blockApt} onChange={(v) => setData({ ...data, blockApt: v })} placeholder="Ex: Apto 302" />
-            </section>
-
-            <section className="mb-5 rounded-xl border border-primary-100 bg-primary-50/30 p-4">
-              <p className="mb-2 text-[10px] uppercase tracking-widest text-primary-500/60">
-                Buscar endereço por CEP
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  type="text"
-                  value={cep}
-                  onChange={(e) => setCep(e.target.value)}
-                  placeholder="00000-000"
-                  className="w-32 rounded-md border border-primary-200 px-3 py-1.5 text-sm"
-                />
-                <input
-                  type="text"
-                  value={number}
-                  onChange={(e) => setNumber(e.target.value)}
-                  placeholder="Nº"
-                  className="w-20 rounded-md border border-primary-200 px-3 py-1.5 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={lookupCep}
-                  disabled={cepBusy}
-                  className="rounded-full bg-primary-500 px-4 py-1.5 text-xs text-white disabled:opacity-50"
-                >
-                  {cepBusy ? 'Buscando…' : '🔍 Buscar'}
-                </button>
-              </div>
-              {msg && (
-                <p className="mt-2 text-xs text-rose-700">{msg}</p>
-              )}
             </section>
 
             <section className="mb-5">
