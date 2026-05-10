@@ -116,6 +116,8 @@ export default function AdminDashboard() {
         notes="Linha do tempo da semana: Cliente reserva (Pedidos) → Mise en place calcula o que comprar → Aurélio lança Compras → Domingo: produção → Encerrar ciclo decide o destino do que sobrou."
       />
 
+      <AttentionPanel />
+
       <CycleClosingWidget
         purchases={allPurchases}
         orders={orders}
@@ -671,6 +673,101 @@ function Stat({
     <div className={`rounded-xl border p-4 shadow-sm ${toneCls}`}>
       {inner}
     </div>
+  );
+}
+
+// ─── Painel "Precisa de atenção" (badges agregados) ───
+type Badges = {
+  pedidos: number;
+  clientes: number;
+  comunidade: number;
+  sugestoes: number;
+  total: number;
+};
+
+function AttentionPanel() {
+  const [badges, setBadges] = useState<Badges | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch('/api/admin/badges', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as Badges;
+        if (!cancelled) setBadges(data);
+      } catch {
+        /* silencioso */
+      }
+    }
+    load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!badges || badges.total === 0) return null;
+
+  type BadgeKey = keyof Omit<Badges, 'total'>;
+  type Item = { key: BadgeKey; label: string; icon: string; href: string; suffix: string };
+  const items: Item[] = (
+    [
+      { key: 'pedidos',    label: 'pedido pendente',  icon: '🍕', href: '/admin/pedidos',    suffix: 'pendentes' },
+      { key: 'comunidade', label: 'foto pra aprovar', icon: '📷', href: '/admin/comunidade', suffix: 'fotos pra aprovar' },
+      { key: 'sugestoes',  label: 'sugestão nova',    icon: '💬', href: '/admin/sugestoes',  suffix: 'sugestões novas' },
+      { key: 'clientes',   label: 'cadastro recente', icon: '👥', href: '/admin/clientes',   suffix: 'cadastros recentes' },
+    ] as Item[]
+  ).filter((i) => badges[i.key] > 0);
+
+  return (
+    <section className="rounded-2xl border-2 border-rose-300 bg-rose-50/40 p-5">
+      <header className="mb-3 flex items-baseline justify-between gap-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-rose-700/80">
+            🔔 Precisa de atenção
+          </p>
+          <h2
+            className="text-2xl italic text-primary-500"
+            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+          >
+            {badges.total} {badges.total === 1 ? 'item aguardando você' : 'itens aguardando você'}
+          </h2>
+        </div>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {items.map((item) => {
+          const count = badges[item.key];
+          return (
+            <Link
+              key={item.key}
+              href={item.href}
+              className="group flex items-center justify-between rounded-xl border border-rose-200 bg-white p-4 transition-all hover:border-rose-400 hover:shadow-md"
+            >
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                  {item.icon} {count === 1 ? item.label : item.suffix}
+                </p>
+                <p
+                  className="mt-1 text-3xl text-rose-600"
+                  style={{
+                    fontFamily: 'var(--font-cormorant), Georgia, serif',
+                    fontWeight: 600,
+                  }}
+                >
+                  {count}
+                </p>
+              </div>
+              <span className="text-rose-400 transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
