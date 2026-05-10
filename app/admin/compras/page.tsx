@@ -118,9 +118,9 @@ export default function ComprasPage() {
   const productionDates = useMemo(() => {
     const set = new Set<string>();
     set.add(productionDate);
-    allPurchases.forEach((p) => {
-      if (p.status === 'pending') set.add(p.productionDate);
-    });
+    // Inclui TODAS as datas com compras (pending OU encerradas) pra
+    // permitir navegação livre entre ciclos passados e futuros.
+    allPurchases.forEach((p) => set.add(p.productionDate));
     return Array.from(set).sort();
   }, [allPurchases, productionDate]);
 
