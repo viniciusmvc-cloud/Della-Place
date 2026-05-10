@@ -509,14 +509,7 @@ export default function CardapioPage() {
                     </div>
                   )}
 
-                  <div className="flex justify-between border-t border-primary-100 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => setExpanded(null)}
-                      className="text-xs text-primary-500/60 hover:text-primary-500"
-                    >
-                      Recolher
-                    </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-3">
                     <button
                       type="button"
                       onClick={() => remove(m.id)}
@@ -524,6 +517,32 @@ export default function CardapioPage() {
                     >
                       🗑 Excluir sabor permanentemente
                     </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setExpanded(null)}
+                        className="rounded-full border border-primary-200 px-4 py-1.5 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await update(m.id, {
+                            name: m.name,
+                            description: m.description,
+                            price: m.price,
+                            cost: m.cost,
+                            active: m.active,
+                            ingredients: m.ingredients,
+                          });
+                          setExpanded(null);
+                        }}
+                        className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-600"
+                      >
+                        ✓ Salvar e recolher
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
