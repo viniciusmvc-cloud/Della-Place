@@ -184,20 +184,48 @@ export default function CardapioPage() {
         const pizzas = menu.filter(
           (m) => m.type !== 'base' && m.id !== 'base-disco' && m.id !== 'base-concha',
         );
-        const groups: { title: string; subtitle: string; items: MenuItem[] }[] = [];
-        if (baseDisco.length) groups.push({ title: 'Massa', subtitle: 'Receita base — usada por todas as pizzas', items: baseDisco });
-        if (baseConcha.length) groups.push({ title: 'Molho', subtitle: 'Receita base — usada por todas as pizzas', items: baseConcha });
-        groups.push({ title: 'Pizzas', subtitle: `${pizzas.length} sabor${pizzas.length === 1 ? '' : 'es'} no cardápio`, items: pizzas });
+        const groups: {
+          title: string;
+          subtitle: string;
+          items: MenuItem[];
+          headerCls: string;
+          titleCls: string;
+        }[] = [];
+        if (baseDisco.length)
+          groups.push({
+            title: 'Massa',
+            subtitle: 'Receita base — usada por todas as pizzas',
+            items: baseDisco,
+            headerCls: 'border-amber-300 bg-amber-50/60',
+            titleCls: 'text-amber-700',
+          });
+        if (baseConcha.length)
+          groups.push({
+            title: 'Molho',
+            subtitle: 'Receita base — usada por todas as pizzas',
+            items: baseConcha,
+            headerCls: 'border-rose-300 bg-rose-50/60',
+            titleCls: 'text-rose-700',
+          });
+        groups.push({
+          title: 'Pizzas',
+          subtitle: `${pizzas.length} sabor${pizzas.length === 1 ? '' : 'es'} no cardápio`,
+          items: pizzas,
+          headerCls: 'border-emerald-300 bg-emerald-50/60',
+          titleCls: 'text-emerald-700',
+        });
         return groups.map((group) => (
           <section key={group.title} className="space-y-3">
-            <header className="flex items-baseline justify-between border-b border-primary-200 pb-1">
+            <header
+              className={`flex flex-wrap items-baseline justify-between gap-2 rounded-lg border-l-4 px-4 py-2 ${group.headerCls}`}
+            >
               <h2
-                className="text-2xl italic text-primary-500"
+                className={`text-2xl italic ${group.titleCls}`}
                 style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
               >
                 {group.title}
               </h2>
-              <p className="text-xs text-primary-500/60">{group.subtitle}</p>
+              <p className={`text-xs ${group.titleCls} opacity-80`}>{group.subtitle}</p>
             </header>
             {group.items.length === 0 ? (
               <p className="rounded-xl border border-dashed border-primary-200 p-4 text-center text-xs text-primary-500/60">
