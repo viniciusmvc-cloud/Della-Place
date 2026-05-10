@@ -10,13 +10,14 @@ type OrderItemFlat = { flavor: string; finish: string };
 type IngredientRow = {
   menu_item_id: string;
   menu_name: string;
-  stock_item_id: string;
-  stock_name: string;
-  stock_brand: string;
+  stock_item_id: string | null;
+  stock_name: string | null;
+  stock_brand: string | null;
   amount: string;
   unit: string;
-  stock_unit: string;
-  stock_qty: string;
+  stock_unit: string | null;
+  stock_qty: string | null;
+  component_menu_id: string | null;
 };
 
 export async function GET(request: Request) {
@@ -50,15 +51,32 @@ export async function GET(request: Request) {
       });
     }
 
+    // Carrega TODAS as receitas (LEFT JOIN pra incluir componentes,
+    // que têm component_menu_id mas stock_item_id=NULL)
     const ingredients = await query<IngredientRow>(
-      `SELECT m.id AS menu_item_id, m.name AS menu_name,
-              s.id AS stock_item_id, s.name AS stock_name, s.brand AS stock_brand,
+      `SELECT ri.menu_item_id, m.name AS menu_name,
+              ri.stock_item_id,
+              s.name AS stock_name, s.brand AS stock_brand,
               ri.amount, ri.unit,
-              s.unit AS stock_unit, s.quantity AS stock_qty
+              s.unit AS stock_unit, s.quantity AS stock_qty,
+              ri.component_menu_id
          FROM recipe_ingredients ri
          JOIN menu_items m ON m.id = ri.menu_item_id
-         JOIN stock_items s ON s.id = ri.stock_item_id`,
+         LEFT JOIN stock_items s ON s.id = ri.stock_item_id`,
     );
+
+    // Indexa por menu_item_id pra resolver componentes recursivamente
+    const recipesByMenu = new Map<string, IngredientRow[]>();
+    ingredients.forEach((ing) => {
+      const list = recipesByMenu.get(ing.menu_item_id) ?? [];
+      list.push(ing);
+      recipesByMenu.set(ing.menu_item_id, list);
+    });
+
+    const menuIdByName = new Map<string, string>();
+    ingredients.forEach((ing) => {
+      menuIdByName.set(ing.menu_name.toLowerCase(), ing.menu_item_id);
+    });
 
     const aggMap = new Map<
       string,
@@ -72,28 +90,62 @@ export async function GET(request: Request) {
       }
     >();
 
-    ingredients.forEach((ing) => {
-      const pizzasOfThisFlavor = flavorCount[ing.menu_name] || 0;
-      if (pizzasOfThisFlavor === 0) return;
-      const ingAmount = Number(ing.amount) * pizzasOfThisFlavor;
-      let amountInStockUnit = ingAmount;
-      if (isCompatible(ing.unit, ing.stock_unit) && ing.unit !== ing.stock_unit) {
-        amountInStockUnit = convertAmount(ingAmount, ing.unit, ing.stock_unit);
-      }
-      const key = ing.stock_item_id;
-      const existing = aggMap.get(key);
+    function addIngredient(
+      stockId: string,
+      stockName: string,
+      stockBrand: string,
+      stockUnit: string,
+      stockQty: number,
+      amountInStockUnit: number,
+    ) {
+      const existing = aggMap.get(stockId);
       if (existing) {
         existing.needed += amountInStockUnit;
       } else {
-        aggMap.set(key, {
-          stockItemId: ing.stock_item_id,
-          stockName: ing.stock_name,
-          stockBrand: ing.stock_brand,
-          unit: ing.stock_unit,
+        aggMap.set(stockId, {
+          stockItemId: stockId,
+          stockName,
+          stockBrand,
+          unit: stockUnit,
           needed: amountInStockUnit,
-          inStock: Number(ing.stock_qty),
+          inStock: stockQty,
         });
       }
+    }
+
+    function expand(menuId: string, multiplier: number, depth = 0) {
+      if (depth > 5) return; // proteção contra loops
+      const recipe = recipesByMenu.get(menuId) ?? [];
+      for (const ing of recipe) {
+        const ingAmount = Number(ing.amount) * multiplier;
+        if (ing.component_menu_id) {
+          // Recursão: expande sub-receita (Disco/Concha)
+          expand(ing.component_menu_id, ingAmount, depth + 1);
+          continue;
+        }
+        if (!ing.stock_item_id || !ing.stock_unit) continue;
+        let amountInStockUnit = ingAmount;
+        if (
+          isCompatible(ing.unit, ing.stock_unit) &&
+          ing.unit !== ing.stock_unit
+        ) {
+          amountInStockUnit = convertAmount(ingAmount, ing.unit, ing.stock_unit);
+        }
+        addIngredient(
+          ing.stock_item_id,
+          ing.stock_name ?? ing.stock_item_id,
+          ing.stock_brand ?? '',
+          ing.stock_unit,
+          Number(ing.stock_qty ?? 0),
+          amountInStockUnit,
+        );
+      }
+    }
+
+    Object.entries(flavorCount).forEach(([flavor, count]) => {
+      const menuId = menuIdByName.get(flavor.toLowerCase());
+      if (!menuId) return;
+      expand(menuId, count);
     });
 
     const totalPizzas = Object.values(flavorCount).reduce((s, n) => s + n, 0);
