@@ -18,6 +18,7 @@ type IngredientRow = {
   stock_unit: string | null;
   stock_qty: string | null;
   component_menu_id: string | null;
+  product_category: string | null;
 };
 
 export async function GET(request: Request) {
@@ -59,10 +60,12 @@ export async function GET(request: Request) {
               s.name AS stock_name, s.brand AS stock_brand,
               ri.amount, ri.unit,
               s.unit AS stock_unit, s.quantity AS stock_qty,
-              ri.component_menu_id
+              ri.component_menu_id,
+              p.category AS product_category
          FROM recipe_ingredients ri
          JOIN menu_items m ON m.id = ri.menu_item_id
-         LEFT JOIN stock_items s ON s.id = ri.stock_item_id`,
+         LEFT JOIN stock_items s ON s.id = ri.stock_item_id
+         LEFT JOIN products p ON p.id = ri.product_id`,
     );
 
     // Indexa por menu_item_id pra resolver componentes recursivamente
@@ -85,6 +88,7 @@ export async function GET(request: Request) {
         stockName: string;
         stockBrand: string;
         unit: string;
+        category: string;
         needed: number;
         inStock: number;
       }
@@ -97,6 +101,7 @@ export async function GET(request: Request) {
       stockUnit: string,
       stockQty: number,
       amountInStockUnit: number,
+      category: string,
     ) {
       const existing = aggMap.get(stockId);
       if (existing) {
@@ -107,6 +112,7 @@ export async function GET(request: Request) {
           stockName,
           stockBrand,
           unit: stockUnit,
+          category,
           needed: amountInStockUnit,
           inStock: stockQty,
         });
@@ -138,6 +144,7 @@ export async function GET(request: Request) {
           ing.stock_unit,
           Number(ing.stock_qty ?? 0),
           amountInStockUnit,
+          ing.product_category ?? 'cobertura',
         );
       }
     }

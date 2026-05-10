@@ -71,34 +71,6 @@ export default function EstoquePage() {
     [inStock, cycleDate],
   );
 
-  // Histórico de ciclos passados (purchases status=used)
-  const pastCycles = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const map = new Map<string, { items: Purchase[]; totalCost: number }>();
-    purchases
-      .filter((p) => p.productionDate < today && p.status === 'used')
-      .forEach((p) => {
-        let bucket = map.get(p.productionDate);
-        if (!bucket) {
-          bucket = { items: [], totalCost: 0 };
-          map.set(p.productionDate, bucket);
-        }
-        bucket.items.push(p);
-        bucket.totalCost += p.totalCost;
-      });
-    return Array.from(map.entries())
-      .sort(([a], [b]) => b.localeCompare(a)); // mais recente primeiro
-  }, [purchases]);
-
-  const pastCyclePizzas = useMemo(() => {
-    const map = new Map<string, number>();
-    orders
-      .filter((o) => o.status === 'pago')
-      .forEach((o) => {
-        map.set(o.date, (map.get(o.date) ?? 0) + o.items.length);
-      });
-    return map;
-  }, [orders]);
 
   // Consumo por produto = pedidos pagos × ingredientes da receita
   const consumptionByProduct = useMemo(() => {
@@ -303,74 +275,6 @@ export default function EstoquePage() {
         />
       </section>
 
-      {pastCycles.length > 0 && (
-        <section className="rounded-xl border border-primary-100 bg-white">
-          <header className="border-b border-primary-100 p-4">
-            <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
-              Histórico
-            </p>
-            <h2
-              className="text-xl italic text-primary-500"
-              style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
-            >
-              Ciclos passados ({pastCycles.length})
-            </h2>
-            <p className="mt-1 text-xs text-primary-500/60">
-              Total consumido nos ciclos já encerrados. Custo já refletido no BI e Relatórios.
-            </p>
-          </header>
-          <ul className="divide-y divide-primary-100">
-            {pastCycles.map(([date, bucket]) => {
-              const pizzas = pastCyclePizzas.get(date) ?? 0;
-              const perPizza = pizzas > 0 ? bucket.totalCost / pizzas : 0;
-              return (
-                <li key={date}>
-                  <details className="group">
-                    <summary className="flex cursor-pointer items-center justify-between gap-3 p-4 hover:bg-primary-50/30">
-                      <div>
-                        <p className="font-medium text-primary-500">
-                          🍕 {formatDateBR(new Date(`${date}T12:00:00`))}
-                        </p>
-                        <p className="text-[11px] text-primary-500/60">
-                          {bucket.items.length} ingredientes consumidos · {pizzas} pizzas
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-primary-500">
-                          R$ {bucket.totalCost.toFixed(2)}
-                        </p>
-                        <p className="text-[11px] text-primary-500/60">
-                          R$ {perPizza.toFixed(2)}/pizza
-                        </p>
-                      </div>
-                    </summary>
-                    <ul className="space-y-1 border-t border-primary-100 bg-primary-50/20 p-3 text-xs">
-                      {bucket.items
-                        .sort((a, b) => b.totalCost - a.totalCost)
-                        .map((p) => (
-                          <li
-                            key={p.id}
-                            className="flex items-center justify-between rounded-md border border-primary-100 bg-white px-3 py-1.5"
-                          >
-                            <span className="flex items-center gap-2 text-primary-500/85">
-                              <span
-                                className={`inline-block h-2 w-2 rounded-full ${CATEGORY_DOT[p.productCategory]}`}
-                              />
-                              {p.productName}
-                            </span>
-                            <span className="text-primary-500/60">
-                              {p.quantity} {p.unit} · R$ {p.totalCost.toFixed(2)}
-                            </span>
-                          </li>
-                        ))}
-                    </ul>
-                  </details>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       <section>
         <h2 className="mb-3 text-sm font-medium uppercase tracking-widest text-primary-500/60">

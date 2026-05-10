@@ -15,11 +15,26 @@ type Production = {
     stockName: string;
     stockBrand: string;
     unit: string;
+    category: string;
     needed: number;
     inStock: number;
     deficit: number;
     ok: boolean;
   }[];
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  massa: 'Massa',
+  molho: 'Molho',
+  cobertura: 'Cobertura',
+  operacao: 'Operação',
+};
+const CATEGORY_ORDER = ['massa', 'molho', 'cobertura', 'operacao'];
+const CATEGORY_HEADER: Record<string, string> = {
+  massa: 'border-amber-300 bg-amber-50/60 text-amber-900',
+  molho: 'border-rose-300 bg-rose-50/60 text-rose-900',
+  cobertura: 'border-emerald-300 bg-emerald-50/60 text-emerald-900',
+  operacao: 'border-blue-300 bg-blue-50/60 text-blue-900',
 };
 
 export default function MiseEnPlacePage() {
@@ -64,8 +79,14 @@ export default function MiseEnPlacePage() {
     if (toBuy.length === 0) {
       lines.push('— nada (estoque suficiente) —');
     } else {
-      toBuy.forEach((i) => {
-        lines.push(`• ${titleCase(i.stockName)}: ${formatAmount(i.deficit, i.unit)}`);
+      // Agrupa por categoria
+      CATEGORY_ORDER.forEach((cat) => {
+        const items = toBuy.filter((i) => (i.category || 'cobertura') === cat);
+        if (items.length === 0) return;
+        lines.push(`_${CATEGORY_LABEL[cat]}:_`);
+        items.forEach((i) => {
+          lines.push(`• ${titleCase(i.stockName)}: ${formatAmount(i.deficit, i.unit)}`);
+        });
       });
     }
     lines.push('');
@@ -74,8 +95,13 @@ export default function MiseEnPlacePage() {
     if (inStock.length === 0) {
       lines.push('— vazio —');
     } else {
-      inStock.forEach((i) => {
-        lines.push(`✓ ${titleCase(i.stockName)}: ${formatAmount(i.inStock, i.unit)}`);
+      CATEGORY_ORDER.forEach((cat) => {
+        const items = inStock.filter((i) => (i.category || 'cobertura') === cat);
+        if (items.length === 0) return;
+        lines.push(`_${CATEGORY_LABEL[cat]}:_`);
+        items.forEach((i) => {
+          lines.push(`✓ ${titleCase(i.stockName)}: ${formatAmount(i.inStock, i.unit)}`);
+        });
       });
     }
     return lines.join('\n');
@@ -239,10 +265,27 @@ export default function MiseEnPlacePage() {
                   : 'Os sabores pedidos não têm receita cadastrada no Cardápio. Adicione ingredientes lá pra calcular automaticamente.'}
               </p>
             ) : (
-              <ul className="divide-y divide-primary-100">
-                {data.ingredients
-                  .filter((ing) => ing.needed > 0 || ing.inStock > 0)
-                  .map((ing) => (
+              <div>
+                {CATEGORY_ORDER.map((cat) => {
+                  const items = data.ingredients
+                    .filter((i) => (i.category || 'cobertura') === cat)
+                    .filter((i) => i.needed > 0 || i.inStock > 0);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={cat} className="border-b border-primary-100 last:border-b-0">
+                      <header className={`flex items-baseline justify-between border-l-4 px-4 py-2 ${CATEGORY_HEADER[cat]}`}>
+                        <h3
+                          className="text-lg italic"
+                          style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+                        >
+                          {CATEGORY_LABEL[cat]}
+                        </h3>
+                        <p className="text-[10px] uppercase tracking-widest opacity-70">
+                          {items.length} item{items.length === 1 ? '' : 's'}
+                        </p>
+                      </header>
+                      <ul className="divide-y divide-primary-100">
+                        {items.map((ing) => (
                   <li
                     key={ing.stockItemId}
                     className={`flex flex-wrap items-center justify-between gap-3 p-4 ${
@@ -295,8 +338,12 @@ export default function MiseEnPlacePage() {
                       )}
                     </div>
                   </li>
-                ))}
-              </ul>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </section>
 
