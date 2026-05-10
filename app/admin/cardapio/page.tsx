@@ -177,15 +177,40 @@ export default function CardapioPage() {
         </p>
       )}
 
-      <div className="space-y-4">
-        {menu.map((m) => {
-          const recipeCost = calcRecipeCost(m, stock);
-          const usingRecipe = (m.ingredients?.length ?? 0) > 0;
-          const cost = usingRecipe ? recipeCost : m.cost;
-          const margin = calcMargin({ price: m.price, cost });
-          const isExpanded = expanded === m.id;
-
-          return (
+      {(() => {
+        // Agrupa: receitas-base (Massa: Disco · Molho: Concha) primeiro, pizzas embaixo
+        const baseDisco = menu.filter((m) => m.id === 'base-disco');
+        const baseConcha = menu.filter((m) => m.id === 'base-concha');
+        const pizzas = menu.filter(
+          (m) => m.type !== 'base' && m.id !== 'base-disco' && m.id !== 'base-concha',
+        );
+        const groups: { title: string; subtitle: string; items: MenuItem[] }[] = [];
+        if (baseDisco.length) groups.push({ title: 'Massa', subtitle: 'Receita base — usada por todas as pizzas', items: baseDisco });
+        if (baseConcha.length) groups.push({ title: 'Molho', subtitle: 'Receita base — usada por todas as pizzas', items: baseConcha });
+        groups.push({ title: 'Pizzas', subtitle: `${pizzas.length} sabor${pizzas.length === 1 ? '' : 'es'} no cardápio`, items: pizzas });
+        return groups.map((group) => (
+          <section key={group.title} className="space-y-3">
+            <header className="flex items-baseline justify-between border-b border-primary-200 pb-1">
+              <h2
+                className="text-2xl italic text-primary-500"
+                style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+              >
+                {group.title}
+              </h2>
+              <p className="text-xs text-primary-500/60">{group.subtitle}</p>
+            </header>
+            {group.items.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-primary-200 p-4 text-center text-xs text-primary-500/60">
+                Vazio.
+              </p>
+            ) : (
+              group.items.map((m) => {
+                const recipeCost = calcRecipeCost(m, stock);
+                const usingRecipe = (m.ingredients?.length ?? 0) > 0;
+                const cost = usingRecipe ? recipeCost : m.cost;
+                const margin = calcMargin({ price: m.price, cost });
+                const isExpanded = expanded === m.id;
+                return (
             <article
               key={m.id}
               className="overflow-hidden rounded-xl border border-primary-100 bg-white shadow-sm"
@@ -475,9 +500,12 @@ export default function CardapioPage() {
                 </div>
               )}
             </article>
-          );
-        })}
-      </div>
+                );
+              })
+            )}
+          </section>
+        ));
+      })()}
 
       {menu.length === 0 && (
         <p className="rounded-xl border border-primary-100 bg-white p-8 text-center text-sm text-primary-500/60">
