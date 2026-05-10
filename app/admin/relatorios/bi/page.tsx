@@ -30,6 +30,7 @@ import {
   type MenuItem,
   type RecipeIngredient,
 } from '@/lib/menu';
+import { formatBRL } from '@/lib/format';
 import { type Order, type StoredCustomer } from '@/lib/orders';
 import { CATEGORY_LABEL, type ProductCategory } from '@/lib/products';
 import { type Purchase } from '@/lib/purchases';

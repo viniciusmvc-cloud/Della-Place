@@ -101,8 +101,10 @@ export default function PedidosPage() {
     const aReceber = inScope
       .filter((o) => o.status !== 'pago')
       .reduce((s, o) => s + o.total, 0);
+    const pizzas = inScope.reduce((s, o) => s + o.items.length, 0);
     return {
       qtd: inScope.length,
+      pizzas,
       pendentes: filtered.filter((o) => o.status === 'pendente').length,
       recebido,
       aReceber,
@@ -173,15 +175,20 @@ export default function PedidosPage() {
         notes="Cancelar libera o horário automaticamente pra outro cliente reservar."
       />
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <KPI label="Pedidos" value={String(stats.qtd)} />
+        <KPI label="Pizzas" value={String(stats.pizzas)} />
         <KPI
           label="Pendentes"
           value={String(stats.pendentes)}
           tone={stats.pendentes > 0 ? 'warn' : undefined}
         />
+        <KPI
+          label="A receber"
+          value={formatBRL(stats.aReceber)}
+          tone={stats.aReceber > 0 ? 'warn' : undefined}
+        />
         <KPI label="Recebido" value={formatBRL(stats.recebido)} tone="good" />
-        <KPI label="A receber" value={formatBRL(stats.aReceber)} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary-100 bg-white p-3">
