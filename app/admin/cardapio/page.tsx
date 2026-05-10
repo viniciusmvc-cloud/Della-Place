@@ -191,7 +191,7 @@ export default function CardapioPage() {
           title: string;
           subtitle: string;
           items: MenuItem[];
-          headerCls: string;
+          containerCls: string;
           titleCls: string;
         }[] = [];
         if (baseDisco.length)
@@ -199,29 +199,30 @@ export default function CardapioPage() {
             title: 'Massa',
             subtitle: 'Receita base — usada por todas as pizzas',
             items: baseDisco,
-            headerCls: 'border-amber-300 bg-amber-50/60',
-            titleCls: 'text-amber-700',
+            containerCls: 'border-amber-300 bg-amber-100/60',
+            titleCls: 'text-amber-900',
           });
         if (baseConcha.length)
           groups.push({
             title: 'Molho',
             subtitle: 'Receita base — usada por todas as pizzas',
             items: baseConcha,
-            headerCls: 'border-rose-300 bg-rose-50/60',
-            titleCls: 'text-rose-700',
+            containerCls: 'border-rose-300 bg-rose-100/60',
+            titleCls: 'text-rose-900',
           });
         groups.push({
           title: 'Pizzas',
           subtitle: `${pizzas.length} sabor${pizzas.length === 1 ? '' : 'es'} no cardápio`,
           items: pizzas,
-          headerCls: 'border-emerald-300 bg-emerald-50/60',
-          titleCls: 'text-emerald-700',
+          containerCls: 'border-emerald-300 bg-emerald-100/60',
+          titleCls: 'text-emerald-900',
         });
         return groups.map((group) => (
-          <section key={group.title} className="space-y-3">
-            <header
-              className={`flex flex-wrap items-baseline justify-between gap-2 rounded-lg border-l-4 px-4 py-2 ${group.headerCls}`}
-            >
+          <section
+            key={group.title}
+            className={`rounded-xl border-2 p-5 space-y-3 ${group.containerCls}`}
+          >
+            <header className="flex flex-wrap items-baseline justify-between gap-2">
               <h2
                 className={`text-2xl italic ${group.titleCls}`}
                 style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
