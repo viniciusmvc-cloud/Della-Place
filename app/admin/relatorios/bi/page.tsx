@@ -63,23 +63,10 @@ function classifyIngredient(name: string): ProductCategory {
   return 'cobertura';
 }
 
-// Categoria do sabor (Clássica vs Especial) — espelha o BI do Aurélio.
-// Heurística: sabores com 1 ingrediente principal + base = Clássica;
-// combinações ou ingredientes premium = Especial.
-const FLAVOR_CATEGORY: Record<string, 'CLÁSSICA' | 'ESPECIAL'> = {
-  'margueritha': 'CLÁSSICA',
-  'marguerita': 'CLÁSSICA',
-  'calabria': 'CLÁSSICA',
-  'portuguesa': 'CLÁSSICA',
-  'frango com catupiry': 'CLÁSSICA',
-  'zucchinni e bacon': 'ESPECIAL',
-  '4 fromaggio': 'ESPECIAL',
-  'lombinho com alho poró': 'ESPECIAL',
-  'lombinho com alho poro': 'ESPECIAL',
-  'toscana': 'ESPECIAL',
-};
-function flavorCategory(flavor: string): 'CLÁSSICA' | 'ESPECIAL' {
-  return FLAVOR_CATEGORY[flavor.toLowerCase().trim()] ?? 'ESPECIAL';
+// Categoria persistida em menu_items.category (Clássica/Especial)
+function flavorCategory(flavor: string, menu: MenuItem[]): string {
+  const m = menu.find((mi) => mi.name.toLowerCase() === flavor.toLowerCase());
+  return m?.category || 'Sem categoria';
 }
 
 export default function BIPage() {
@@ -128,21 +115,21 @@ export default function BIPage() {
     return { totalPedidos, totalPizzas, receita, custo, lucro, ticketMedio, foodCostPct };
   }, [orders, menu]);
 
-  // ─── Receita por CATEGORIA (Clássica/Especial) ───
+  // ─── Receita por CATEGORIA (lida do menu_items.category) ───
   const revenueByCategory = useMemo(() => {
-    const totals: Record<string, number> = { 'CLÁSSICA': 0, 'ESPECIAL': 0 };
+    const totals: Record<string, number> = {};
     orders
       .filter((o) => o.status === 'pago')
       .forEach((o) =>
         o.items.forEach((it) => {
-          const cat = flavorCategory(it.flavor);
-          totals[cat] += it.price;
+          const cat = flavorCategory(it.flavor, menu);
+          totals[cat] = (totals[cat] || 0) + it.price;
         }),
       );
     return Object.entries(totals)
       .filter(([, v]) => v > 0)
       .map(([name, value]) => ({ name, value }));
-  }, [orders]);
+  }, [orders, menu]);
 
   // ─── Pizzas por data/evento (todas as datas com pedidos pagos) ───
   const pizzasByDate = useMemo(() => {

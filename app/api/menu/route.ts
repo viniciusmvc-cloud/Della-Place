@@ -13,6 +13,7 @@ type MenuRow = {
   cost: string;
   active: number;
   type: string | null;
+  category: string | null;
 };
 
 type IngredientRow = {
@@ -31,13 +32,13 @@ export async function GET() {
     let ingredients: IngredientRow[];
     try {
       items = await query<MenuRow>(
-        'SELECT id, name, description, price, cost, active, type FROM menu_items ORDER BY name',
+        'SELECT id, name, description, price, cost, active, type, category FROM menu_items ORDER BY name',
       );
       ingredients = await query<IngredientRow>(
         'SELECT id, menu_item_id, stock_item_id, product_id, component_menu_id, amount, unit FROM recipe_ingredients',
       );
     } catch {
-      // Fallback: schema antigo sem type/component_menu_id
+      // Fallback: schema antigo sem type/category/component_menu_id
       items = await query<MenuRow>(
         'SELECT id, name, description, price, cost, active FROM menu_items ORDER BY name',
       );
@@ -54,6 +55,7 @@ export async function GET() {
       cost: Number(m.cost),
       active: m.active === 1,
       type: (m.type === 'base' ? 'base' : 'pizza') as 'pizza' | 'base',
+      category: m.category ?? null,
       ingredients: ingredients
         .filter((ing) => ing.menu_item_id === m.id)
         .map((ing) => ({

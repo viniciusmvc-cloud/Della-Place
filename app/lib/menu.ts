@@ -20,6 +20,7 @@ export type MenuItem = {
   ingredients: RecipeIngredient[];
   active: boolean;
   type?: MenuItemType;
+  category?: string | null;
 };
 
 export const DEFAULT_MENU: MenuItem[] = [

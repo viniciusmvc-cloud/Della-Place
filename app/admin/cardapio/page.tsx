@@ -308,6 +308,26 @@ export default function CardapioPage() {
                       value={m.price}
                       onChange={(v) => update(m.id, { price: v })}
                     />
+                    {m.type !== 'base' && (
+                      <label className="block md:col-span-2">
+                        <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+                          Categoria (usada no BI)
+                        </span>
+                        <select
+                          value={m.category ?? ''}
+                          onChange={(e) =>
+                            update(m.id, { category: e.target.value || null })
+                          }
+                          className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="">— sem categoria —</option>
+                          <option value="Clássica">Clássica</option>
+                          <option value="Especial">Especial</option>
+                          <option value="Doce">Doce</option>
+                          <option value="Vegetariana">Vegetariana</option>
+                        </select>
+                      </label>
+                    )}
                     <div className="md:col-span-2">
                       <label className="block">
                         <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
@@ -515,6 +535,7 @@ export default function CardapioPage() {
                           price: m.price,
                           cost: m.cost,
                           active: m.active,
+                          category: m.category ?? null,
                           ingredients: m.ingredients,
                         });
                         setExpanded(null);

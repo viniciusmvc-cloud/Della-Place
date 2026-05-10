@@ -17,6 +17,7 @@ export async function PATCH(
       price?: number;
       cost?: number;
       active?: boolean;
+      category?: string | null;
       ingredients?: {
         stockItemId: string;
         productId?: number | null;
@@ -49,6 +50,10 @@ export async function PATCH(
     if (body.active !== undefined) {
       fields.push('active = ?');
       values.push(body.active ? 1 : 0);
+    }
+    if (body.category !== undefined) {
+      fields.push('category = ?');
+      values.push(body.category || null);
     }
 
     await transaction(async (conn) => {
