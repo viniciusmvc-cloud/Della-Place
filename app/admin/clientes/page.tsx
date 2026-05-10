@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchCustomers, fetchOrders } from '@/lib/api';
+import { formatBRL, titleCase } from '@/lib/format';
 import { type Order, type StoredCustomer } from '@/lib/orders';
 import { formatDateBR } from '@/lib/utils';
 
@@ -24,6 +25,8 @@ export default function ClientesPage() {
   const [customers, setCustomers] = useState<StoredCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [letter, setLetter] = useState<string | null>(null);
+  const [selectedCpf, setSelectedCpf] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     Promise.all([fetchOrders().catch(() => []), fetchCustomers().catch(() => [])])
@@ -31,7 +34,7 @@ export default function ClientesPage() {
         setOrders(o);
         setCustomers(c);
       });
-  }, []);
+  }, [tick]);
 
   const enriched = useMemo(() => {
     return customers
@@ -228,6 +231,17 @@ export default function ClientesPage() {
         />
       </section>
 
+      {selectedCpf && (
+        <CustomerDrawer
+          cpf={selectedCpf}
+          orders={orders.filter((o) => o.customer.cpf === selectedCpf)}
+          onClose={() => setSelectedCpf(null)}
+          onSaved={() => {
+            setTick((t) => t + 1);
+          }}
+        />
+      )}
+
       {enriched.length === 0 ? (
         <p className="rounded-xl border border-primary-100 bg-white p-8 text-center text-sm text-primary-500/60">
           Nenhum cliente encontrado.
@@ -250,9 +264,13 @@ export default function ClientesPage() {
               {enriched.map((e) => (
                 <tr key={e.customer.cpf} className="border-t border-primary-100 align-top">
                   <td className="px-3 py-2">
-                    <p className="font-medium text-primary-500">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCpf(e.customer.cpf)}
+                      className="font-medium text-primary-500 hover:underline"
+                    >
                       {e.customer.fullName}
-                    </p>
+                    </button>
                     <p className="text-[11px] text-primary-500/60">
                       <a
                         href={`https://wa.me/55${e.customer.phone.replace(/\D/g, '')}`}
@@ -331,6 +349,243 @@ function Alert({
         </ul>
       )}
     </div>
+  );
+}
+
+function CustomerDrawer({
+  cpf,
+  orders,
+  onClose,
+  onSaved,
+}: {
+  cpf: string;
+  orders: Order[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [data, setData] = useState<{
+    cpf: string;
+    fullName: string;
+    phone: string;
+    email: string;
+    address: string;
+    blockApt: string;
+  } | null>(null);
+  const [cep, setCep] = useState('');
+  const [number, setNumber] = useState('');
+  const [cepBusy, setCepBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/customers/${encodeURIComponent(cpf)}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => onClose());
+  }, [cpf, onClose]);
+
+  async function lookupCep() {
+    const clean = cep.replace(/\D/g, '');
+    if (clean.length !== 8) {
+      setMsg('CEP precisa ter 8 dígitos.');
+      return;
+    }
+    setCepBusy(true);
+    setMsg(null);
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const j = await r.json();
+      if (j.erro || !j.logradouro) {
+        setMsg('CEP não encontrado.');
+        return;
+      }
+      const addr = `${j.logradouro}, ${number || ''}, ${j.bairro}, ${j.localidade}-${j.uf}`.replace(', ,', ',');
+      setData((d) => (d ? { ...d, address: addr } : d));
+    } catch {
+      setMsg('Erro ao consultar CEP. Tente de novo.');
+    } finally {
+      setCepBusy(false);
+    }
+  }
+
+  async function save() {
+    if (!data) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/customers/${encodeURIComponent(cpf)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: data.fullName,
+          phone: data.phone,
+          email: data.email,
+          address: data.address,
+          blockApt: data.blockApt,
+        }),
+      });
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const totalGasto = orders
+    .filter((o) => o.status === 'pago')
+    .reduce((s, o) => s + o.total, 0);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-primary-900/40 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border border-primary-100 bg-white p-6 shadow-2xl"
+      >
+        <header className="mb-4 flex items-baseline justify-between">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+              Cliente · {cpf}
+            </p>
+            <h2
+              className="text-2xl italic text-primary-500"
+              style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+            >
+              {data?.fullName ?? 'Carregando…'}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-2xl text-primary-500/60 hover:text-primary-500"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
+        </header>
+
+        {data && (
+          <>
+            <section className="mb-5 grid gap-3 md:grid-cols-2">
+              <Field label="Nome completo" value={data.fullName} onChange={(v) => setData({ ...data, fullName: v })} />
+              <Field label="Telefone" value={data.phone} onChange={(v) => setData({ ...data, phone: v })} placeholder="(71) 99999-9999" />
+              <Field label="Email (opcional)" value={data.email} onChange={(v) => setData({ ...data, email: v })} />
+              <Field label="Bloco/apto" value={data.blockApt} onChange={(v) => setData({ ...data, blockApt: v })} placeholder="Ex: Apto 302" />
+            </section>
+
+            <section className="mb-5 rounded-xl border border-primary-100 bg-primary-50/30 p-4">
+              <p className="mb-2 text-[10px] uppercase tracking-widest text-primary-500/60">
+                Buscar endereço por CEP
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  value={cep}
+                  onChange={(e) => setCep(e.target.value)}
+                  placeholder="00000-000"
+                  className="w-32 rounded-md border border-primary-200 px-3 py-1.5 text-sm"
+                />
+                <input
+                  type="text"
+                  value={number}
+                  onChange={(e) => setNumber(e.target.value)}
+                  placeholder="Nº"
+                  className="w-20 rounded-md border border-primary-200 px-3 py-1.5 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={lookupCep}
+                  disabled={cepBusy}
+                  className="rounded-full bg-primary-500 px-4 py-1.5 text-xs text-white disabled:opacity-50"
+                >
+                  {cepBusy ? 'Buscando…' : '🔍 Buscar'}
+                </button>
+              </div>
+              {msg && (
+                <p className="mt-2 text-xs text-rose-700">{msg}</p>
+              )}
+            </section>
+
+            <section className="mb-5">
+              <Field
+                label="Endereço completo"
+                value={data.address}
+                onChange={(v) => setData({ ...data, address: v })}
+              />
+            </section>
+
+            <section className="mb-5 rounded-xl border border-primary-100 bg-white p-4">
+              <p className="mb-2 text-[10px] uppercase tracking-widest text-primary-500/60">
+                Histórico
+              </p>
+              <p className="text-sm text-primary-500">
+                {orders.length} pedido{orders.length === 1 ? '' : 's'} · Total
+                pago: <strong>{formatBRL(totalGasto)}</strong>
+              </p>
+              {orders.length > 0 && (
+                <ul className="mt-2 max-h-40 space-y-1 overflow-auto text-xs text-primary-500/80">
+                  {orders.slice(0, 10).map((o) => (
+                    <li key={o.id}>
+                      {formatDateBR(new Date(`${o.date}T12:00:00`))} ·{' '}
+                      {o.items.map((it) => titleCase(it.flavor)).join(', ')} ·{' '}
+                      {formatBRL(o.total)} · <em>{o.status}</em>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <footer className="flex justify-end gap-2 border-t border-primary-100 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {saving ? 'Salvando…' : '✓ Salvar'}
+              </button>
+            </footer>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+        {label}
+      </span>
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-primary-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-primary-500"
+      />
+    </label>
   );
 }
 
