@@ -13,6 +13,7 @@ type OrderRow = {
   total: string;
   notes: string | null;
   status: 'pendente' | 'confirmado' | 'pago' | 'cancelado';
+  cancellation_reason?: string | null;
   created_at: Date;
   full_name: string;
   phone: string;
@@ -40,13 +41,25 @@ function dateToIso(d: Date | string): string {
 
 export async function GET() {
   try {
-    const orders = await query<OrderRow>(
-      `SELECT o.id, o.customer_cpf, o.delivery_date, o.total, o.notes, o.status, o.created_at,
-              c.full_name, c.phone, c.email, c.address, c.block_apt
-         FROM orders o
-         JOIN customers c ON c.cpf = o.customer_cpf
-        ORDER BY o.created_at DESC`,
-    );
+    let orders: OrderRow[];
+    try {
+      orders = await query<OrderRow>(
+        `SELECT o.id, o.customer_cpf, o.delivery_date, o.total, o.notes, o.status, o.cancellation_reason, o.created_at,
+                c.full_name, c.phone, c.email, c.address, c.block_apt
+           FROM orders o
+           JOIN customers c ON c.cpf = o.customer_cpf
+          ORDER BY o.created_at DESC`,
+      );
+    } catch {
+      // Fallback: cancellation_reason ainda não migrado
+      orders = await query<OrderRow>(
+        `SELECT o.id, o.customer_cpf, o.delivery_date, o.total, o.notes, o.status, o.created_at,
+                c.full_name, c.phone, c.email, c.address, c.block_apt
+           FROM orders o
+           JOIN customers c ON c.cpf = o.customer_cpf
+          ORDER BY o.created_at DESC`,
+      );
+    }
     const items = await query<OrderItemRow>(
       'SELECT id, order_id, time_slot, flavor, finish, price FROM order_items ORDER BY time_slot',
     );
@@ -75,6 +88,7 @@ export async function GET() {
         total: Number(o.total),
         notes: o.notes ?? '',
         status: o.status,
+        cancellationReason: o.cancellation_reason ?? null,
       })),
     );
   } catch (err) {
