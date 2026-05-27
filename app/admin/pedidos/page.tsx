@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import HelpBanner from '@/components/admin/HelpBanner';
 import { fetchOrders, setOrderStatus as apiSetStatus } from '@/lib/api';
 import { formatBRL, titleCase } from '@/lib/format';
@@ -54,7 +54,7 @@ export default function PedidosPage() {
   const [period, setPeriod] = useState<Period>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [actionFor, setActionFor] = useState<Order | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -111,9 +111,13 @@ export default function PedidosPage() {
     };
   }, [filtered]);
 
-  async function setStatus(id: string, status: OrderStatus) {
-    setOpenMenuId(null);
-    await apiSetStatus(id, status);
+  async function setStatus(
+    id: string,
+    status: OrderStatus,
+    cancellationReason?: string | null,
+  ) {
+    setActionFor(null);
+    await apiSetStatus(id, status, cancellationReason);
     setTick((t) => t + 1);
   }
 
@@ -280,10 +284,7 @@ export default function PedidosPage() {
                 <OrderRow
                   key={o.id}
                   order={o}
-                  isMenuOpen={openMenuId === o.id}
-                  onToggleMenu={() =>
-                    setOpenMenuId(openMenuId === o.id ? null : o.id)
-                  }
+                  onOpenActions={() => setActionFor(o)}
                   onAction={(s) => setStatus(o.id, s)}
                 />
               ))}
@@ -291,37 +292,29 @@ export default function PedidosPage() {
           </table>
         </div>
       )}
+
+      {actionFor && (
+        <ActionsModal
+          order={actionFor}
+          onClose={() => setActionFor(null)}
+          onAction={(status, reason) =>
+            setStatus(actionFor.id, status, reason)
+          }
+        />
+      )}
     </div>
   );
 }
 
 function OrderRow({
   order,
-  isMenuOpen,
-  onToggleMenu,
+  onOpenActions,
   onAction,
 }: {
   order: Order;
-  isMenuOpen: boolean;
-  onToggleMenu: () => void;
+  onOpenActions: () => void;
   onAction: (status: OrderStatus) => void;
 }) {
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!isMenuOpen) return;
-    function handleOutside(e: MouseEvent) {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(e.target as Node)
-      ) {
-        onToggleMenu();
-      }
-    }
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [isMenuOpen, onToggleMenu]);
-
   const firstTime = order.items[0]?.time ?? '—';
   const confirmation = deriveConfirmation(order.status);
   const payment = derivePayment(order.status);
@@ -433,74 +426,211 @@ function OrderRow({
           </button>
         )}
       </td>
-      <td className="relative px-3 py-2 text-center">
+      <td className="px-3 py-2 text-center">
         <button
           type="button"
-          onClick={onToggleMenu}
+          onClick={onOpenActions}
           aria-label="Ações do pedido"
-          className="rounded-full border border-primary-200 px-2 py-1 text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+          title="Abrir menu de ações (cancelar, alterar status…)"
+          className="rounded-full border border-primary-200 px-3 py-1 text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
         >
           ⋯
         </button>
-        {isMenuOpen && (
-          <div
-            ref={menuRef}
-            className="absolute right-3 z-20 mt-1 w-52 rounded-xl border border-primary-100 bg-white p-1 text-left shadow-lg"
+        {order.status === 'cancelado' && order.cancellationReason && (
+          <p
+            className="mt-1 max-w-[140px] text-[10px] leading-tight text-rose-700"
+            title={order.cancellationReason}
           >
-            {order.status !== 'cancelado' && (
-              <>
-                {confirmation === 'pendente' && (
-                  <MenuItem
-                    icon="✓"
-                    label="Confirmar pedido"
-                    onClick={() => onAction('confirmado')}
-                  />
-                )}
-                {confirmation === 'confirmado' && payment === 'pendente' && (
-                  <MenuItem
-                    icon="💰"
-                    label="Marcar como pago"
-                    onClick={() => onAction('pago')}
-                  />
-                )}
-                {payment === 'recebido' && (
-                  <MenuItem
-                    icon="↩"
-                    label="Voltar para confirmado"
-                    onClick={() => onAction('confirmado')}
-                  />
-                )}
-                <MenuItem
-                  icon="🗑"
-                  label="Cancelar pedido"
-                  tone="danger"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        'Cancelar este pedido? O horário volta a ficar disponível pra outros clientes.',
-                      )
-                    ) {
-                      onAction('cancelado');
-                    }
-                  }}
-                />
-              </>
-            )}
-            {order.status === 'cancelado' && (
-              <MenuItem
-                icon="↺"
-                label="Reabrir pedido (volta pra pendente)"
-                onClick={() => onAction('pendente')}
-              />
-            )}
-          </div>
+            <span className="font-medium">Motivo:</span>{' '}
+            {order.cancellationReason.length > 28
+              ? `${order.cancellationReason.slice(0, 28)}…`
+              : order.cancellationReason}
+          </p>
         )}
       </td>
     </tr>
   );
 }
 
-function MenuItem({
+// ─────────────────────────────────────────────────────────────────
+// Modal central de ações (substitui o dropdown antigo, que era
+// cortado pelo overflow-x-auto da tabela).
+// ─────────────────────────────────────────────────────────────────
+function ActionsModal({
+  order,
+  onClose,
+  onAction,
+}: {
+  order: Order;
+  onClose: () => void;
+  onAction: (status: OrderStatus, cancellationReason?: string | null) => void;
+}) {
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const confirmation = deriveConfirmation(order.status);
+  const payment = derivePayment(order.status);
+  const customerName = order.customer.fullName;
+  const firstTime = order.items[0]?.time ?? '';
+  const dateLabel = formatDateBR(new Date(`${order.date}T12:00:00`));
+
+  function handleCancel() {
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      alert('Por favor, escreva o motivo do cancelamento.');
+      return;
+    }
+    onAction('cancelado', trimmed);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <header className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3
+              className="text-xl text-primary-500"
+              style={{
+                fontFamily: 'var(--font-cormorant), Georgia, serif',
+                fontWeight: 600,
+              }}
+            >
+              {customerName}
+            </h3>
+            <p className="text-xs text-primary-500/60">
+              {firstTime && `${firstTime} · `}
+              {dateLabel} · {order.items.length} pizza
+              {order.items.length === 1 ? '' : 's'} · {formatBRL(order.total)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="rounded-full p-1 text-primary-500/60 hover:bg-primary-50 hover:text-primary-500"
+          >
+            ✕
+          </button>
+        </header>
+
+        {!confirmingCancel ? (
+          <div className="space-y-2">
+            {order.status !== 'cancelado' && (
+              <>
+                {confirmation === 'pendente' && (
+                  <ActionButton
+                    icon="✓"
+                    label="Confirmar pedido"
+                    onClick={() => onAction('confirmado')}
+                  />
+                )}
+                {confirmation === 'confirmado' && payment === 'pendente' && (
+                  <ActionButton
+                    icon="💰"
+                    label="Marcar como pago"
+                    onClick={() => onAction('pago')}
+                  />
+                )}
+                {payment === 'recebido' && (
+                  <ActionButton
+                    icon="↩"
+                    label="Voltar para confirmado"
+                    onClick={() => onAction('confirmado')}
+                  />
+                )}
+                <ActionButton
+                  icon="🗑"
+                  label="Cancelar pedido"
+                  tone="danger"
+                  onClick={() => setConfirmingCancel(true)}
+                />
+              </>
+            )}
+            {order.status === 'cancelado' && (
+              <>
+                {order.cancellationReason && (
+                  <div className="mb-2 rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">
+                    <p className="mb-1 text-[10px] uppercase tracking-widest text-rose-600">
+                      Motivo do cancelamento
+                    </p>
+                    {order.cancellationReason}
+                  </div>
+                )}
+                <ActionButton
+                  icon="↺"
+                  label="Reabrir pedido (volta pra pendente)"
+                  onClick={() => onAction('pendente', null)}
+                />
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="mb-1 font-medium">⚠️ Cancelar este pedido?</p>
+              <p>
+                O horário {firstTime && <strong>{firstTime}</strong>} de{' '}
+                {dateLabel} volta a ficar disponível pra outros clientes.
+              </p>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+                Motivo do cancelamento <span className="text-rose-600">*</span>
+              </span>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="Ex: cliente desistiu, problema com a massa, viagem do Aurélio…"
+                className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-500"
+              />
+              <p className="mt-1 text-[10px] text-primary-500/60">
+                Esse motivo fica salvo no pedido (visível só pra você).
+              </p>
+            </label>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingCancel(false);
+                  setReason('');
+                }}
+                className="rounded-full border border-primary-200 px-4 py-1.5 text-sm text-primary-500/80 hover:border-primary-500"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={!reason.trim()}
+                className="rounded-full bg-rose-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                🗑 Confirmar cancelamento
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActionButton({
   icon,
   label,
   onClick,
@@ -517,11 +647,11 @@ function MenuItem({
       onClick={onClick}
       className={
         tone === 'danger'
-          ? 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50'
-          : 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-primary-500/80 hover:bg-primary-50'
+          ? 'flex w-full items-center gap-3 rounded-lg border border-rose-200 bg-rose-50/40 px-4 py-3 text-left text-sm font-medium text-rose-700 hover:bg-rose-50'
+          : 'flex w-full items-center gap-3 rounded-lg border border-primary-100 bg-white px-4 py-3 text-left text-sm text-primary-500 hover:border-primary-500 hover:bg-primary-50/40'
       }
     >
-      <span className="w-4 text-center" aria-hidden="true">
+      <span className="text-lg" aria-hidden="true">
         {icon}
       </span>
       <span>{label}</span>

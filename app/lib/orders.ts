@@ -23,6 +23,8 @@ export type Order = {
   total: number;
   notes: string;
   status: OrderStatus;
+  /** Motivo informado pelo admin ao cancelar. Vazio em pedidos não cancelados. */
+  cancellationReason?: string | null;
 };
 
 const ORDERS_KEY = 'della-pace.orders.v1';

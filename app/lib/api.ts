@@ -75,10 +75,14 @@ export function createOrder(order: Order) {
     body: JSON.stringify(order),
   });
 }
-export function setOrderStatus(id: string, status: OrderStatus) {
+export function setOrderStatus(
+  id: string,
+  status: OrderStatus,
+  cancellationReason?: string | null,
+) {
   return apiFetch(`/api/orders/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, cancellationReason }),
   });
 }
 

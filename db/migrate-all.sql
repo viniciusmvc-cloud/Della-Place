@@ -183,6 +183,12 @@ DELIMITER ;
 CALL della_v11_add_recipe_stock_fk();
 DROP PROCEDURE della_v11_add_recipe_stock_fk;
 
+-- ═══ v12: motivo de cancelamento de pedido ══════════════════════════
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS cancellation_reason TEXT NULL
+  COMMENT 'Motivo do cancelamento informado pelo admin.';
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════
