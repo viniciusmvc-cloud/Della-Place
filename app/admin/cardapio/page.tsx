@@ -39,7 +39,7 @@ export default function CardapioPage() {
       .then(([m, s, p]) => {
         setMenu(m);
         setStock(s);
-        setProducts(p.filter((x) => x.active));
+        setProducts(p);
       })
       .catch(() => {});
   }, []);
@@ -114,12 +114,12 @@ export default function CardapioPage() {
   function addIngredient(itemId: string) {
     const it = menu.find((m) => m.id === itemId);
     if (!it) return;
-    const firstStock = stock[0];
-    if (!firstStock) return;
+    const firstProduct = products[0];
+    if (!firstProduct) return;
     const nextIngredient: RecipeIngredient = {
-      stockItemId: firstStock.id,
+      productId: firstProduct.id,
       amount: 0,
-      unit: firstStock.unit,
+      unit: 'un',
     };
     update(itemId, { ingredients: [...(it.ingredients ?? []), nextIngredient] });
   }
@@ -429,31 +429,27 @@ export default function CardapioPage() {
                               </li>
                             );
                           }
-                          const stk = stock.find((s) => s.id === ing.stockItemId);
-                          const cost = stk ? ingredientCost(ing, stk) : 0;
-                          const incompat = stk && !isCompatible(ing.unit, stk.unit);
+                          const prod = products.find((p) => p.id === ing.productId);
+                          const incompat = false;
                           return (
                             <li
                               key={idx}
                               className="grid grid-cols-12 items-center gap-2 rounded-md border border-primary-100 bg-white p-2 text-sm"
                             >
                               <select
-                                value={ing.stockItemId}
+                                value={ing.productId ?? ''}
                                 onChange={(e) => {
-                                  const newStock = stock.find(
-                                    (s) => s.id === e.target.value,
-                                  );
                                   updateIngredient(m.id, idx, {
-                                    stockItemId: e.target.value,
-                                    unit: newStock?.unit ?? ing.unit,
+                                    productId: e.target.value ? Number(e.target.value) : null,
                                   });
                                 }}
                                 className="col-span-5 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-sm"
                               >
-                                {stock.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name}
-                                    {s.brand ? ` · ${s.brand}` : ''}
+                                <option value="">— selecione um ingrediente —</option>
+                                {products.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name}
+                                    {p.brand ? ` · ${p.brand}` : ''}
                                   </option>
                                 ))}
                               </select>
@@ -486,13 +482,9 @@ export default function CardapioPage() {
                                 ))}
                               </select>
                               <span
-                                className={`col-span-2 text-right text-xs ${
-                                  incompat ? 'text-rose-600' : 'text-primary-500/80'
-                                }`}
+                                className={`col-span-2 text-right text-xs text-primary-500/80`}
                               >
-                                {incompat
-                                  ? '⚠ unidade'
-                                  : `R$ ${cost.toFixed(2)}`}
+                                —
                               </span>
                               <button
                                 type="button"
@@ -501,44 +493,6 @@ export default function CardapioPage() {
                               >
                                 ×
                               </button>
-                              <div className="col-span-12 mt-1 flex items-center gap-2 border-t border-primary-100 pt-2">
-                                <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
-                                  ↳ Liga ao produto:
-                                </span>
-                                <select
-                                  value={ing.productId ?? ''}
-                                  onChange={(e) =>
-                                    updateIngredient(m.id, idx, {
-                                      productId: e.target.value
-                                        ? Number(e.target.value)
-                                        : null,
-                                    })
-                                  }
-                                  className="flex-1 rounded-md border border-primary-200 bg-white px-2 py-1 text-xs"
-                                >
-                                  <option value="">— sem ligação (estoque não decrementa) —</option>
-                                  {(['massa', 'molho', 'cobertura', 'operacao'] as const).map(
-                                    (cat) => {
-                                      const items = products.filter(
-                                        (p) =>
-                                          p.category === cat ||
-                                          p.categories?.includes(cat),
-                                      );
-                                      if (items.length === 0) return null;
-                                      return (
-                                        <optgroup key={cat} label={CATEGORY_LABEL[cat]}>
-                                          {items.map((p) => (
-                                            <option key={p.id} value={p.id}>
-                                              {p.name}
-                                              {p.brand ? ` · ${p.brand}` : ''}
-                                            </option>
-                                          ))}
-                                        </optgroup>
-                                      );
-                                    },
-                                  )}
-                                </select>
-                              </div>
                             </li>
                           );
                         })}
