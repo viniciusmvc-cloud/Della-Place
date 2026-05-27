@@ -4,7 +4,24 @@ export type AvailableDate = {
   startHour: string;
   notes?: string;
   flavorIds?: string[];
+  /** ISO datetime; após esse instante, pedidos novos para essa data são bloqueados. */
+  orderDeadlineAt?: string | null;
 };
+
+/**
+ * Retorna true se a data ainda aceita pedidos novos.
+ * - Se não há entrada de disponibilidade, retorna false.
+ * - Se há entrada mas sem deadline, retorna true (aberta indefinidamente).
+ * - Se há deadline, compara com `now`.
+ */
+export function isAcceptingOrders(
+  config: AvailableDate | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!config) return false;
+  if (!config.orderDeadlineAt) return true;
+  return now.getTime() < new Date(config.orderDeadlineAt).getTime();
+}
 
 export const DEFAULT_START_HOUR = '18:00';
 export const DEFAULT_CAPACITY = 8;

@@ -132,6 +132,57 @@ ALTER TABLE recipe_ingredients
 ALTER TABLE admin_users
   ADD COLUMN IF NOT EXISTS phone VARCHAR(20) DEFAULT NULL;
 
+-- ═══ v11: deadline de pedidos + receita com productId ════════════════
+-- Ver db/schema-v11.sql para detalhes. Embarcado aqui para ficar idempotente.
+
+ALTER TABLE availability
+  ADD COLUMN IF NOT EXISTS order_deadline_at DATETIME NULL
+  COMMENT 'Após esse instante, pedidos novos para essa data são bloqueados.';
+
+-- Tornar stock_item_id da receita NULLABLE. Bloco protegido: tenta DROP da FK
+-- existente; se já não existir (rerun) o erro é ignorado por outro caminho.
+-- MySQL não tem IF EXISTS pra DROP FOREIGN KEY antes da 8.0.19; usar PROCEDURE.
+
+DROP PROCEDURE IF EXISTS della_v11_drop_recipe_stock_fk;
+DELIMITER //
+CREATE PROCEDURE della_v11_drop_recipe_stock_fk()
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'recipe_ingredients'
+       AND CONSTRAINT_NAME = 'fk_recipe_stock'
+  ) THEN
+    ALTER TABLE recipe_ingredients DROP FOREIGN KEY fk_recipe_stock;
+  END IF;
+END//
+DELIMITER ;
+CALL della_v11_drop_recipe_stock_fk();
+DROP PROCEDURE della_v11_drop_recipe_stock_fk;
+
+ALTER TABLE recipe_ingredients
+  MODIFY stock_item_id VARCHAR(50) NULL;
+
+-- Recriar FK como ON DELETE SET NULL (só se ainda não existir)
+DROP PROCEDURE IF EXISTS della_v11_add_recipe_stock_fk;
+DELIMITER //
+CREATE PROCEDURE della_v11_add_recipe_stock_fk()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'recipe_ingredients'
+       AND CONSTRAINT_NAME = 'fk_recipe_stock'
+  ) THEN
+    ALTER TABLE recipe_ingredients
+      ADD CONSTRAINT fk_recipe_stock
+        FOREIGN KEY (stock_item_id) REFERENCES stock_items(id) ON DELETE SET NULL;
+  END IF;
+END//
+DELIMITER ;
+CALL della_v11_add_recipe_stock_fk();
+DROP PROCEDURE della_v11_add_recipe_stock_fk;
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

@@ -113,9 +113,18 @@ export default function Booking() {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       if (av.length > 0) {
-        const futureAv = av.filter(
-          (a) => new Date(`${a.date}T12:00:00`) >= todayStart,
-        );
+        // Esconde datas (a) passadas e (b) com deadline de pedidos já vencido.
+        const now = Date.now();
+        const futureAv = av.filter((a) => {
+          if (new Date(`${a.date}T12:00:00`) < todayStart) return false;
+          if (
+            a.orderDeadlineAt &&
+            new Date(a.orderDeadlineAt).getTime() <= now
+          ) {
+            return false;
+          }
+          return true;
+        });
         setAvailableDates(
           futureAv.map((a) => new Date(`${a.date}T12:00:00`)),
         );
