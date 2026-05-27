@@ -9,6 +9,36 @@ export type AvailableDate = {
 };
 
 /**
+ * Gera os horários disponíveis pra reserva num dia de produção.
+ *
+ * - Começa em `startHour` (default 18:00), em incrementos de 15 min.
+ * - Se `capacity` informada: gera EXATAMENTE `capacity` slots (1 por pizza).
+ *   Ex: start=18:00, capacity=8 → ['18:00', '18:15', ..., '19:45'].
+ *   Último horário disponível é 18:00 + (capacity - 1) × 15 min.
+ * - Sem capacity: comportamento legado — vai do start até 23:00.
+ *
+ * Hard cap em 23:00 mesmo com capacity alta (Aurélio não produz tarde).
+ */
+export function generateSlots(startHour: string, capacity?: number): string[] {
+  const m = /^(\d{1,2}):(\d{2})/.exec(startHour);
+  const startH = m ? Math.max(0, Math.min(22, parseInt(m[1], 10))) : 18;
+  const startM = m ? Math.max(0, Math.min(45, parseInt(m[2], 10))) : 0;
+  const out: string[] = [];
+  let h = startH;
+  let mm = startM - (startM % 15);
+  const maxSlots = capacity && capacity > 0 ? capacity : 999;
+  while (h < 23 && out.length < maxSlots) {
+    out.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+    mm += 15;
+    if (mm >= 60) {
+      mm = 0;
+      h += 1;
+    }
+  }
+  return out;
+}
+
+/**
  * Retorna true se a data ainda aceita pedidos novos.
  * - Se não há entrada de disponibilidade, retorna false.
  * - Se há entrada mas sem deadline, retorna true (aberta indefinidamente).

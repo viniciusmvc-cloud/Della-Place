@@ -1,10 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { fetchCustomers, fetchOrders } from '@/lib/api';
+import {
+  createAdminOrder,
+  fetchAvailability,
+  fetchBookedSlots,
+  fetchCustomers,
+  fetchMenu,
+  fetchOrders,
+} from '@/lib/api';
+import { generateSlots, type AvailableDate } from '@/lib/availability';
 import { formatBRL, titleCase } from '@/lib/format';
-import { type Order, type StoredCustomer } from '@/lib/orders';
-import { formatDateBR } from '@/lib/utils';
+import { type MenuItem } from '@/lib/menu';
+import { newOrderId, type Order, type StoredCustomer } from '@/lib/orders';
+import { formatDateBR, formatDateISO } from '@/lib/utils';
 
 const DAY = 1000 * 60 * 60 * 24;
 
@@ -372,6 +381,7 @@ function CustomerDrawer({
     blockApt: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<'detail' | 'new-order'>('detail');
 
   useEffect(() => {
     fetch(`/api/customers/${encodeURIComponent(cpf)}`)
@@ -477,26 +487,292 @@ function CustomerDrawer({
               )}
             </section>
 
-            <footer className="flex justify-end gap-2 border-t border-primary-100 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={save}
-                disabled={saving}
-                className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-              >
-                {saving ? 'Salvando…' : '✓ Salvar'}
-              </button>
-            </footer>
+            {view === 'detail' && (
+              <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setView('new-order')}
+                  className="rounded-full border border-emerald-300 bg-emerald-50/70 px-5 py-2 text-sm font-medium text-emerald-700 hover:border-emerald-500 hover:bg-emerald-100"
+                >
+                  🍕 Novo pedido pra esse cliente
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={save}
+                    disabled={saving}
+                    className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                  >
+                    {saving ? 'Salvando…' : '✓ Salvar dados'}
+                  </button>
+                </div>
+              </footer>
+            )}
+
+            {view === 'new-order' && (
+              <NewOrderInline
+                customer={{
+                  cpf: data.cpf,
+                  fullName: data.fullName,
+                  phone: data.phone,
+                  email: data.email,
+                  address: data.address,
+                  blockApt: data.blockApt,
+                }}
+                onBack={() => setView('detail')}
+                onCreated={() => {
+                  setView('detail');
+                  onSaved();
+                }}
+              />
+            )}
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Lançamento manual de pedido pelo admin
+// (ex: cliente pediu via WhatsApp; Aurélio lança aqui pelo painel)
+// ─────────────────────────────────────────────────────────────────
+function NewOrderInline({
+  customer,
+  onBack,
+  onCreated,
+}: {
+  customer: StoredCustomer;
+  onBack: () => void;
+  onCreated: () => void;
+}) {
+  const [availabilities, setAvailabilities] = useState<AvailableDate[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [dateIso, setDateIso] = useState<string>('');
+  const [time, setTime] = useState<string>('');
+  const [flavor, setFlavor] = useState<string>('');
+  const [finish, setFinish] = useState<'Assada' | 'Congelada'>('Assada');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetchAvailability().catch(() => [] as AvailableDate[]),
+      fetchMenu().catch(() => [] as MenuItem[]),
+    ]).then(([av, m]) => {
+      const today = formatDateISO(new Date());
+      const future = av.filter((a) => a.date >= today);
+      setAvailabilities(future);
+      setMenu(m.filter((mi) => mi.active));
+      if (future.length > 0) setDateIso(future[0].date);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!dateIso) return;
+    let cancelled = false;
+    fetchBookedSlots(dateIso)
+      .then((slots) => !cancelled && setBookedSlots(slots))
+      .catch(() => !cancelled && setBookedSlots([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [dateIso]);
+
+  const dayConfig = availabilities.find((a) => a.date === dateIso);
+  const availableFlavors = useMemo(() => {
+    if (!dayConfig?.flavorIds || dayConfig.flavorIds.length === 0) return menu;
+    const allowed = new Set(dayConfig.flavorIds);
+    return menu.filter((m) => allowed.has(m.id));
+  }, [dayConfig, menu]);
+
+  // Slots disponíveis = generateSlots − bookedSlots
+  const freeSlots = useMemo(() => {
+    if (!dayConfig) return [];
+    const all = generateSlots(dayConfig.startHour, dayConfig.capacity);
+    const booked = new Set(bookedSlots);
+    return all.filter((s) => !booked.has(s));
+  }, [dayConfig, bookedSlots]);
+
+  useEffect(() => {
+    // Auto-seleciona o primeiro slot livre quando muda a data
+    if (freeSlots.length > 0 && !freeSlots.includes(time)) {
+      setTime(freeSlots[0]);
+    }
+  }, [freeSlots, time]);
+
+  useEffect(() => {
+    if (availableFlavors.length > 0 && !availableFlavors.some((m) => m.name === flavor)) {
+      setFlavor(availableFlavors[0].name);
+    }
+  }, [availableFlavors, flavor]);
+
+  const price = menu.find((m) => m.name === flavor)?.price ?? 0;
+  const canSubmit = !!dateIso && !!time && !!flavor && !submitting;
+
+  async function submit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const order: Order = {
+        id: newOrderId(),
+        createdAt: new Date().toISOString(),
+        date: dateIso,
+        customer,
+        items: [{ time, flavor, finish, price }],
+        total: price,
+        notes: 'Pedido lançado manualmente pelo admin (cliente pediu por WhatsApp).',
+        status: 'pendente',
+      };
+      await createAdminOrder(order);
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (availabilities.length === 0) {
+    return (
+      <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="font-medium">
+          ⚠️ Não há datas de produção abertas no calendário.
+        </p>
+        <p>
+          Antes de criar um pedido manual, abra um domingo em{' '}
+          <strong>Disponibilidade</strong>.
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-full border border-amber-300 px-4 py-1.5 text-xs text-amber-800 hover:bg-amber-100"
+        >
+          ← Voltar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+        <p className="text-[10px] uppercase tracking-widest text-emerald-700">
+          Novo pedido para
+        </p>
+        <p className="text-sm font-medium text-primary-500">
+          {customer.fullName} · {customer.phone}
+        </p>
+      </div>
+
+      <label className="block">
+        <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+          📅 Data de produção
+        </span>
+        <select
+          value={dateIso}
+          onChange={(e) => setDateIso(e.target.value)}
+          className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
+        >
+          {availabilities.map((a) => (
+            <option key={a.date} value={a.date}>
+              {formatDateBR(new Date(`${a.date}T12:00:00`))} · início{' '}
+              {a.startHour} · {a.capacity} pizzas
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+          ⏰ Horário (slots livres)
+        </span>
+        {freeSlots.length === 0 ? (
+          <p className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">
+            Nenhum horário livre nesse dia. Escolha outra data.
+          </p>
+        ) : (
+          <select
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
+          >
+            {freeSlots.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
+      </label>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+            🍕 Sabor
+          </span>
+          <select
+            value={flavor}
+            onChange={(e) => setFlavor(e.target.value)}
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
+          >
+            {availableFlavors.map((m) => (
+              <option key={m.id} value={m.name}>
+                {m.name} — {formatBRL(m.price)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+            Acabamento
+          </span>
+          <select
+            value={finish}
+            onChange={(e) =>
+              setFinish(e.target.value as 'Assada' | 'Congelada')
+            }
+            className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
+          >
+            <option value="Assada">Assada</option>
+            <option value="Congelada">Congelada</option>
+          </select>
+        </label>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+          {error}
+        </div>
+      )}
+
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+        >
+          ← Voltar
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!canSubmit || freeSlots.length === 0}
+          className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? 'Criando…' : `🍕 Criar pedido · ${formatBRL(price)}`}
+        </button>
+      </footer>
     </div>
   );
 }

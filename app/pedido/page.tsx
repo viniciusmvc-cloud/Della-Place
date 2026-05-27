@@ -12,6 +12,7 @@ import {
   lookupCustomer,
   upsertCustomer,
 } from '@/lib/api';
+import { generateSlots } from '@/lib/availability';
 import { CONTACT } from '@/lib/contact';
 import { DEFAULT_MENU, type MenuItem } from '@/lib/menu';
 import { newOrderId, type StoredCustomer } from '@/lib/orders';
@@ -39,23 +40,7 @@ function formatCpf(s: string): string {
 function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? fullName;
 }
-function generateSlotsFrom(startHour: string): string[] {
-  const m = /^(\d{1,2}):(\d{2})/.exec(startHour);
-  const startH = m ? Math.max(0, Math.min(22, parseInt(m[1], 10))) : 18;
-  const startM = m ? Math.max(0, Math.min(45, parseInt(m[2], 10))) : 0;
-  const out: string[] = [];
-  let h = startH;
-  let mm = startM - (startM % 15);
-  while (h < 23) {
-    out.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-    mm += 15;
-    if (mm >= 60) {
-      mm = 0;
-      h += 1;
-    }
-  }
-  return out;
-}
+// generateSlots agora vive em @/lib/availability — importado acima.
 
 export default function PedidoPage() {
   const [stage, setStage] = useState<'login' | 'register' | 'app'>('login');
@@ -67,6 +52,7 @@ export default function PedidoPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [startHourByDate, setStartHourByDate] = useState<Record<string, string>>({});
+  const [capacityByDate, setCapacityByDate] = useState<Record<string, number>>({});
   const [flavorsByDate, setFlavorsByDate] = useState<Record<string, string[]>>({});
 
   const [date, setDate] = useState<Date | null>(null);
@@ -114,14 +100,17 @@ export default function PedidoPage() {
         );
         setAvailableDates(future.map((a) => new Date(`${a.date}T12:00:00`)));
         const hourMap: Record<string, string> = {};
+        const capMap: Record<string, number> = {};
         const flavorMap: Record<string, string[]> = {};
         future.forEach((a) => {
           hourMap[a.date] = a.startHour ?? '18:00';
+          capMap[a.date] = a.capacity ?? 8;
           if (a.flavorIds && a.flavorIds.length > 0) {
             flavorMap[a.date] = a.flavorIds;
           }
         });
         setStartHourByDate(hourMap);
+        setCapacityByDate(capMap);
         setFlavorsByDate(flavorMap);
       }
     });
@@ -145,8 +134,10 @@ export default function PedidoPage() {
 
   const allSlots = useMemo(() => {
     const iso = date ? formatDateISO(date) : null;
-    return generateSlotsFrom((iso && startHourByDate[iso]) || '18:00');
-  }, [date, startHourByDate]);
+    const startHour = (iso && startHourByDate[iso]) || '18:00';
+    const capacity = iso ? capacityByDate[iso] : undefined;
+    return generateSlots(startHour, capacity);
+  }, [date, startHourByDate, capacityByDate]);
 
   const visibleMenu = useMemo(() => {
     const iso = date ? formatDateISO(date) : null;

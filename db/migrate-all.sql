@@ -189,6 +189,51 @@ ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS cancellation_reason TEXT NULL
   COMMENT 'Motivo do cancelamento informado pelo admin.';
 
+-- ═══ v13: cadastro simplificado (telefone como chave) ════════════════
+-- Ver db/schema-v13.sql para a versão standalone com normalização de
+-- telefones e tratamento de duplicados. Aqui embutimos o essencial.
+
+ALTER TABLE customers
+  MODIFY block_apt VARCHAR(100) NULL;
+
+-- Normaliza telefones (remove não-dígitos) antes de criar UNIQUE
+UPDATE customers
+SET phone = REGEXP_REPLACE(phone, '[^0-9]', '')
+WHERE phone REGEXP '[^0-9]';
+
+-- Sufixa duplicados pra não violar UNIQUE
+DROP TEMPORARY TABLE IF EXISTS _phone_dups;
+CREATE TEMPORARY TABLE _phone_dups AS
+SELECT phone, MAX(updated_at) AS keep_at
+  FROM customers
+ WHERE phone <> ''
+ GROUP BY phone
+HAVING COUNT(*) > 1;
+
+UPDATE customers c
+  JOIN _phone_dups d ON c.phone = d.phone
+   SET c.phone = CONCAT(c.phone, '-DUP-', c.cpf)
+ WHERE c.updated_at < d.keep_at OR c.updated_at IS NULL;
+
+DROP TEMPORARY TABLE IF EXISTS _phone_dups;
+
+DROP PROCEDURE IF EXISTS della_v13_add_phone_unique;
+DELIMITER //
+CREATE PROCEDURE della_v13_add_phone_unique()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'customers'
+       AND INDEX_NAME = 'uniq_phone'
+  ) THEN
+    ALTER TABLE customers ADD UNIQUE KEY uniq_phone (phone);
+  END IF;
+END//
+DELIMITER ;
+CALL della_v13_add_phone_unique();
+DROP PROCEDURE della_v13_add_phone_unique;
+
 -- ════════════════════════════════════════════════════════════════════
 -- ✓ Pronto. Agora pode fazer o deploy do código.
 -- ════════════════════════════════════════════════════════════════════

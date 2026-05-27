@@ -802,7 +802,9 @@ function DayModal({
               className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
             />
             <p className="mt-1 text-[10px] text-primary-500/60">
-              Slots de 15 em 15 min começam neste horário e vão até 23:00.
+              Slots de 15 em 15 min começam neste horário. O último horário
+              disponível pra reserva é definido pela capacidade do dia (8 pizzas
+              a partir de 18:00 = último slot às 19:45).
             </p>
           </label>
 
