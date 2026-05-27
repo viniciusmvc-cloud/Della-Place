@@ -58,6 +58,19 @@ export async function lookupCustomer(cpf: string): Promise<StoredCustomer | null
     return null;
   }
 }
+export async function lookupCustomerByPhone(
+  phone: string,
+): Promise<StoredCustomer | null> {
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return null;
+  try {
+    return await apiFetch<StoredCustomer>(
+      `/api/customers/by-phone/${encodeURIComponent(digits)}`,
+    );
+  } catch {
+    return null;
+  }
+}
 export function upsertCustomer(c: StoredCustomer) {
   return apiFetch('/api/customers', {
     method: 'POST',
@@ -72,6 +85,21 @@ export function fetchOrders(): Promise<Order[]> {
 export function createOrder(order: Order) {
   return apiFetch('/api/orders', {
     method: 'POST',
+    body: JSON.stringify(order),
+  });
+}
+/**
+ * Cria um pedido como admin (ex: lançamento manual a partir da ficha do
+ * cliente). Envia header X-Admin-Bypass-Deadline pra ignorar o deadline
+ * de pedidos do dia (caso o admin esteja criando pós-deadline).
+ */
+export function createAdminOrder(order: Order) {
+  return apiFetch('/api/orders', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Bypass-Deadline': '1',
+    },
     body: JSON.stringify(order),
   });
 }

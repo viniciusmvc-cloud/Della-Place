@@ -8,8 +8,10 @@ import {
   fetchBookedSlots,
   fetchMenu,
   lookupCustomer,
+  lookupCustomerByPhone,
   upsertCustomer,
 } from '@/lib/api';
+import { generateSlots } from '@/lib/availability';
 import { CONTACT, whatsAppLink } from '@/lib/contact';
 import { DEFAULT_MENU, type MenuItem } from '@/lib/menu';
 import { newOrderId, type Order } from '@/lib/orders';
@@ -62,23 +64,7 @@ function nextSundays(count: number): Date[] {
   }
   return result;
 }
-function generateSlotsFrom(startHour: string): string[] {
-  const m = /^(\d{1,2}):(\d{2})/.exec(startHour);
-  const startH = m ? Math.max(0, Math.min(22, parseInt(m[1], 10))) : 18;
-  const startM = m ? Math.max(0, Math.min(45, parseInt(m[2], 10))) : 0;
-  const out: string[] = [];
-  let h = startH;
-  let mm = startM - (startM % 15);
-  while (h < 23) {
-    out.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-    mm += 15;
-    if (mm >= 60) {
-      mm = 0;
-      h += 1;
-    }
-  }
-  return out;
-}
+// generateSlots agora vive em @/lib/availability — importado abaixo.
 
 export default function Booking() {
   const [mode, setMode] = useState<Mode>('idle');
@@ -94,6 +80,7 @@ export default function Booking() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [startHourByDate, setStartHourByDate] = useState<Record<string, string>>({});
+  const [capacityByDate, setCapacityByDate] = useState<Record<string, number>>({});
   const [flavorsByDate, setFlavorsByDate] = useState<Record<string, string[]>>({});
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
@@ -129,18 +116,22 @@ export default function Booking() {
           futureAv.map((a) => new Date(`${a.date}T12:00:00`)),
         );
         const hourMap: Record<string, string> = {};
+        const capMap: Record<string, number> = {};
         const flavorMap: Record<string, string[]> = {};
         futureAv.forEach((a) => {
           hourMap[a.date] = a.startHour ?? '18:00';
+          capMap[a.date] = a.capacity ?? 8;
           if (a.flavorIds && a.flavorIds.length > 0) {
             flavorMap[a.date] = a.flavorIds;
           }
         });
         setStartHourByDate(hourMap);
+        setCapacityByDate(capMap);
         setFlavorsByDate(flavorMap);
       } else {
         setAvailableDates(nextSundays(8));
         setStartHourByDate({});
+        setCapacityByDate({});
         setFlavorsByDate({});
       }
     });
@@ -150,19 +141,29 @@ export default function Booking() {
     return menu.find((m) => m.name === name)?.price ?? 0;
   }
 
+  // Lookup do cliente recorrente: tenta CPF primeiro, depois telefone.
+  // Aceita qualquer um dos dois — se acharem, preenche o cadastro completo.
   useEffect(() => {
     if (mode !== 'returning') return;
-    const key = digitsOnly(customer.cpf);
-    if (key.length === 0) {
+    const cpfDigits = digitsOnly(customer.cpf);
+    const phoneDigits = digitsOnly(customer.phone);
+
+    // Nenhum dos dois preenchido
+    if (cpfDigits.length === 0 && phoneDigits.length === 0) {
       setLookupMessage('idle');
       return;
     }
-    if (key.length < 11) {
+
+    // Algum dos dois ainda incompleto e o outro vazio
+    const cpfReady = cpfDigits.length === 11;
+    const phoneReady = phoneDigits.length >= 10; // 10 (sem 9) ou 11 (com 9)
+    if (!cpfReady && !phoneReady) {
       setLookupMessage('short');
       return;
     }
+
     let cancelled = false;
-    lookupCustomer(customer.cpf).then((found) => {
+    const fillIfFound = (found: typeof customer | null) => {
       if (cancelled) return;
       if (found) {
         setCustomer({
@@ -177,17 +178,26 @@ export default function Booking() {
       } else {
         setLookupMessage('notfound');
       }
-    });
+    };
+
+    // Prioridade: CPF se tem 11 dígitos; senão telefone
+    if (cpfReady) {
+      lookupCustomer(customer.cpf).then(fillIfFound);
+    } else if (phoneReady) {
+      lookupCustomerByPhone(customer.phone).then(fillIfFound);
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [customer.cpf, mode]);
+  }, [customer.cpf, customer.phone, mode]);
 
   const allSlots = useMemo(() => {
     const iso = date ? formatDateISO(date) : null;
     const startHour = (iso && startHourByDate[iso]) || '18:00';
-    return generateSlotsFrom(startHour);
-  }, [date, startHourByDate]);
+    const capacity = iso ? capacityByDate[iso] : undefined;
+    return generateSlots(startHour, capacity);
+  }, [date, startHourByDate, capacityByDate]);
 
   const visibleMenu = useMemo(() => {
     const iso = date ? formatDateISO(date) : null;
@@ -254,22 +264,45 @@ export default function Booking() {
     setItems((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const cpfOk = digitsOnly(customer.cpf).length === 11;
+  // Gera um CPF "sintético" pra cliente novo que não informou CPF:
+  // prefixo "T" (de telefone) + 10 últimos dígitos do telefone.
+  // Cabe em VARCHAR(14) e não colide com CPF real (CPF não começa com letra).
+  function syntheticCpfFromPhone(phone: string): string {
+    const digits = digitsOnly(phone);
+    return `T${digits.slice(-10)}`; // 11 chars total
+  }
+
+  const cpfDigits = digitsOnly(customer.cpf);
+  const cpfOk = cpfDigits.length === 0 || cpfDigits.length === 11; // opcional, mas se preencher deve ter 11
   const cadastroOk =
     cpfOk &&
     customer.fullName.trim().length > 0 &&
     digitsOnly(customer.phone).length >= 10 &&
-    customer.address.trim().length > 0 &&
-    customer.blockApt.trim().length > 0;
+    customer.address.trim().length > 0;
+  // blockApt agora é opcional
   const orderOk = !!date && items.length > 0;
   const allOk = cadastroOk && orderOk;
+
+  /** Devolve o cliente normalizado pra envio à API. Gera CPF se vazio. */
+  function customerForApi(): Customer {
+    const cpf = customer.cpf.trim().length > 0
+      ? customer.cpf
+      : syntheticCpfFromPhone(customer.phone);
+    return { ...customer, cpf };
+  }
 
   async function handleSaveCadastro() {
     if (!cadastroOk) return;
     try {
-      await upsertCustomer(customer);
+      const normalized = customerForApi();
+      await upsertCustomer(normalized);
+      // Atualiza estado pra refletir o CPF sintético gerado (se for o caso),
+      // pra que o pedido use a mesma identidade.
+      if (normalized.cpf !== customer.cpf) {
+        setCustomer((prev) => ({ ...prev, cpf: normalized.cpf }));
+      }
       setCadastroSavedNotice(
-        'Cadastro salvo. Você pode reutilizar com o mesmo CPF nas próximas reservas.',
+        'Cadastro salvo. Você pode reutilizar pelo telefone nas próximas reservas.',
       );
       setTimeout(() => setCadastroSavedNotice(null), 4500);
     } catch (err) {
@@ -319,11 +352,16 @@ export default function Booking() {
       return;
     }
     e.preventDefault();
+    // Normaliza CPF (gera sintético do telefone se cliente novo não informou).
+    const normalizedCustomer = customerForApi();
+    if (normalizedCustomer.cpf !== customer.cpf) {
+      setCustomer((prev) => ({ ...prev, cpf: normalizedCustomer.cpf }));
+    }
     const order: Order = {
       id: newOrderId(),
       createdAt: new Date().toISOString(),
       date: formatDateISO(date),
-      customer: { ...customer },
+      customer: { ...normalizedCustomer },
       items: items.map((it) => ({
         time: it.time,
         flavor: it.flavor,
@@ -335,6 +373,10 @@ export default function Booking() {
       status: 'pendente',
     };
     try {
+      // Persiste o cliente antes de criar o pedido (idempotente — backend faz
+      // upsert por CPF). Garante que clientes novos com CPF sintético existam
+      // na tabela customers antes do INSERT do pedido (FK).
+      await upsertCustomer(normalizedCustomer).catch(() => {});
       await createOrder(order);
       window.open(whatsAppLink(buildOrderMessage()), '_blank', 'noopener');
     } catch (err) {
@@ -399,15 +441,30 @@ export default function Booking() {
 
             {mode === 'returning' && (
               <div className="space-y-3">
-                <Input
-                  label="CPF"
-                  value={customer.cpf}
-                  onChange={(v) => setField('cpf', formatCpf(v))}
-                  placeholder="000.000.000-00"
-                  inputMode="numeric"
-                />
+                <p className="text-xs text-primary-500/60">
+                  Use o <strong>telefone</strong> ou o <strong>CPF</strong> —
+                  qualquer um dos dois localiza seu cadastro.
+                </p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    label="📱 WhatsApp"
+                    value={customer.phone}
+                    onChange={(v) => setField('phone', v)}
+                    placeholder="(00) 00000-0000"
+                    inputMode="tel"
+                  />
+                  <Input
+                    label="CPF (opcional)"
+                    value={customer.cpf}
+                    onChange={(v) => setField('cpf', formatCpf(v))}
+                    placeholder="000.000.000-00"
+                    inputMode="numeric"
+                  />
+                </div>
                 {lookupMessage === 'short' && (
-                  <p className="text-xs text-primary-500/60">Continue digitando o CPF…</p>
+                  <p className="text-xs text-primary-500/60">
+                    Continue digitando o telefone ou o CPF…
+                  </p>
                 )}
                 {lookupMessage === 'notfound' && (
                   <p className="text-xs text-primary-500/70">
@@ -439,11 +496,11 @@ export default function Booking() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <Input
-                    label="CPF"
-                    value={customer.cpf}
-                    onChange={(v) => setField('cpf', formatCpf(v))}
-                    placeholder="000.000.000-00"
-                    inputMode="numeric"
+                    label="📱 WhatsApp"
+                    value={customer.phone}
+                    onChange={(v) => setField('phone', v)}
+                    placeholder="(00) 00000-0000"
+                    inputMode="tel"
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -454,16 +511,16 @@ export default function Booking() {
                   />
                 </div>
                 <Input
-                  label="WhatsApp"
-                  value={customer.phone}
-                  onChange={(v) => setField('phone', v)}
-                  placeholder="(00) 00000-0000"
-                  inputMode="tel"
-                />
-                <Input
                   label="E-mail (opcional)"
                   value={customer.email}
                   onChange={(v) => setField('email', v)}
+                />
+                <Input
+                  label="CPF (opcional)"
+                  value={customer.cpf}
+                  onChange={(v) => setField('cpf', formatCpf(v))}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
                 />
               </div>
             )}
@@ -481,10 +538,10 @@ export default function Booking() {
                     />
                   </div>
                   <Input
-                    label="Bloco / Apartamento / Complemento"
+                    label="Bloco / Apartamento (opcional)"
                     value={customer.blockApt}
                     onChange={(v) => setField('blockApt', v)}
-                    placeholder="0000"
+                    placeholder="opcional"
                   />
                 </div>
               ) : lookupMessage === 'found' ? (
@@ -492,13 +549,16 @@ export default function Booking() {
                   <p>
                     <strong>Endereço:</strong> {customer.address}
                   </p>
-                  <p>
-                    <strong>Bloco/Apto:</strong> {customer.blockApt}
-                  </p>
+                  {customer.blockApt && (
+                    <p>
+                      <strong>Bloco/Apto:</strong> {customer.blockApt}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-primary-500/60">
-                  Informe o CPF acima para preencher automaticamente.
+                  Informe seu telefone ou CPF acima para preencher
+                  automaticamente.
                 </p>
               )}
             </Block>
