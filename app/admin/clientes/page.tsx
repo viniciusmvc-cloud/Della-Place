@@ -381,6 +381,8 @@ function CustomerDrawer({
     blockApt: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [view, setView] = useState<'detail' | 'new-order'>('detail');
 
   useEffect(() => {
@@ -393,20 +395,47 @@ function CustomerDrawer({
   async function save() {
     if (!data) return;
     setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
     try {
-      await fetch(`/api/customers/${encodeURIComponent(cpf)}`, {
+      // Normaliza telefone pra digits-only antes de salvar (consistente com
+      // migration v13 que normalizou todos os existentes).
+      const normalizedPhone = data.phone.replace(/\D/g, '');
+      const res = await fetch(`/api/customers/${encodeURIComponent(cpf)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fullName: data.fullName,
-          phone: data.phone,
+          phone: normalizedPhone,
           email: data.email,
           address: data.address,
           blockApt: data.blockApt,
         }),
       });
+      if (!res.ok) {
+        let msg = `Erro ao salvar (${res.status})`;
+        try {
+          const body = await res.text();
+          // Erro de UNIQUE no telefone vira "Duplicate entry"
+          if (/duplicate entry|ER_DUP_ENTRY/i.test(body)) {
+            msg =
+              'Esse telefone já está cadastrado em outro cliente. Verifique o número.';
+          } else if (body) {
+            msg = `Erro: ${body.slice(0, 200)}`;
+          }
+        } catch {
+          // ignore
+        }
+        setSaveError(msg);
+        return;
+      }
+      // Atualiza state local com o telefone normalizado pra refletir na UI
+      setData({ ...data, phone: normalizedPhone });
+      setSaveSuccess(true);
       onSaved();
-      onClose();
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Erro de rede.');
     } finally {
       setSaving(false);
     }
@@ -488,32 +517,44 @@ function CustomerDrawer({
             </section>
 
             {view === 'detail' && (
-              <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setView('new-order')}
-                  className="rounded-full border border-emerald-300 bg-emerald-50/70 px-5 py-2 text-sm font-medium text-emerald-700 hover:border-emerald-500 hover:bg-emerald-100"
-                >
-                  🍕 Novo pedido pra esse cliente
-                </button>
-                <div className="flex gap-2">
+              <>
+                {saveError && (
+                  <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                    ❌ {saveError}
+                  </div>
+                )}
+                {saveSuccess && (
+                  <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                    ✓ Dados salvos com sucesso.
+                  </div>
+                )}
+                <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-100 pt-4">
                   <button
                     type="button"
-                    onClick={onClose}
-                    className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                    onClick={() => setView('new-order')}
+                    className="rounded-full border border-emerald-300 bg-emerald-50/70 px-5 py-2 text-sm font-medium text-emerald-700 hover:border-emerald-500 hover:bg-emerald-100"
                   >
-                    Fechar
+                    🍕 Novo pedido pra esse cliente
                   </button>
-                  <button
-                    type="button"
-                    onClick={save}
-                    disabled={saving}
-                    className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-                  >
-                    {saving ? 'Salvando…' : '✓ Salvar dados'}
-                  </button>
-                </div>
-              </footer>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={save}
+                      disabled={saving}
+                      className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                    >
+                      {saving ? 'Salvando…' : '✓ Salvar dados'}
+                    </button>
+                  </div>
+                </footer>
+              </>
             )}
 
             {view === 'new-order' && (
