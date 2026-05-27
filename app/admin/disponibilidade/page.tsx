@@ -1,223 +1,963 @@
-// /app/admin/disponibilidade/page.tsx - VERSÃO CORRIGIDA COM CAMPO DE DEADLINE
-// ✅ NOVO: Campo "Fechar pedidos em" para definir deadline
-
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
+import {
+  fetchAvailability,
+  fetchCustomers,
+  fetchMenu,
+  removeAvailability,
+  sendPushNotification,
+  upsertAvailability,
+} from '@/lib/api';
+import {
+  DEFAULT_CAPACITY,
+  DEFAULT_START_HOUR,
+  type AvailableDate,
+} from '@/lib/availability';
+import { type MenuItem } from '@/lib/menu';
+import { type StoredCustomer } from '@/lib/orders';
+import {
+  cn,
+  endOfMonth,
+  formatDateBR,
+  formatDateISO,
+  startOfDay,
+  startOfMonth,
+} from '@/lib/utils';
+import {
+  broadcastWhatsAppLink,
+  buildBroadcastMessage,
+} from '@/lib/whatsapp-broadcast';
 
-interface AvailableDate {
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTHS = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+type Draft = {
   date: string;
   capacity: number;
   startHour: string;
   notes: string;
   flavorIds: string[];
-  orderDeadlineAt?: string | null;  // ✅ NOVO CAMPO
+  /** datetime-local string, ex: "2026-05-29T23:59". Vazio = sem deadline. */
+  orderDeadlineAt: string;
+  exists: boolean;
+};
+
+/** Converte ISO UTC ("...Z") para o formato datetime-local em America/Sao_Paulo. */
+function isoToDatetimeLocalSP(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  // Ajusta pro fuso SP (UTC-3, sem horário de verão).
+  const sp = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  return sp.toISOString().slice(0, 16);
+}
+
+/** Converte datetime-local SP ("YYYY-MM-DDTHH:MM") para ISO UTC. Vazio → null. */
+function datetimeLocalSPToIso(v: string): string | null {
+  if (!v) return null;
+  // Trato a string como horário SP (-03:00) e converto para UTC.
+  const d = new Date(`${v}:00-03:00`);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
 }
 
 export default function DisponibilidadePage() {
-  const [dates, setDates] = useState<AvailableDate[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Form states
-  const [formDate, setFormDate] = useState('');
-  const [formCapacity, setFormCapacity] = useState(8);
-  const [formStartHour, setFormStartHour] = useState('18:00');
-  const [formOrderDeadline, setFormOrderDeadline] = useState('');  // ✅ NOVO
-
-  // Carregar disponibilidades
-  const loadDates = async () => {
-    try {
-      const res = await fetch('/api/availability');
-      if (!res.ok) throw new Error('Erro ao carregar');
-      const data = await res.json();
-      setDates(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Erro:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [list, setList] = useState<AvailableDate[]>([]);
+  const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [broadcastFor, setBroadcastFor] = useState<AvailableDate | null>(null);
+  const [customers, setCustomers] = useState<StoredCustomer[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDates();
+    Promise.all([
+      fetchAvailability().catch(() => []),
+      fetchCustomers().catch(() => []),
+      fetchMenu().catch(() => []),
+    ]).then(([av, cust, m]) => {
+      setList(av);
+      setCustomers(cust);
+      setMenu(m.filter((x) => x.active));
+    });
   }, []);
 
-  // Abrir novo domingo
-  const handleOpenDate = async () => {
-    if (!formDate) {
-      alert('Selecione a data');
-      return;
+  const byDate = useMemo(() => {
+    const m = new Map<string, AvailableDate>();
+    list.forEach((a) => m.set(a.date, a));
+    return m;
+  }, [list]);
+
+  const days = useMemo(() => {
+    const first = startOfMonth(cursor);
+    const last = endOfMonth(cursor);
+    const leadingBlanks = first.getDay();
+    const out: (Date | null)[] = [];
+    for (let i = 0; i < leadingBlanks; i++) out.push(null);
+    for (let d = 1; d <= last.getDate(); d++) {
+      out.push(new Date(cursor.getFullYear(), cursor.getMonth(), d));
     }
+    return out;
+  }, [cursor]);
 
+  const today = startOfDay(new Date());
+
+  function notify(msg: string) {
+    setSavedNotice(msg);
+    setTimeout(() => setSavedNotice(null), 2200);
+  }
+
+  function openDay(date: Date) {
+    const iso = formatDateISO(date);
+    const existing = byDate.get(iso);
+    setError(null);
+    const allActiveIds = menu.map((x) => x.id);
+    setDraft({
+      date: iso,
+      capacity: existing?.capacity ?? DEFAULT_CAPACITY,
+      startHour: existing?.startHour ?? DEFAULT_START_HOUR,
+      notes: existing?.notes ?? '',
+      flavorIds:
+        existing?.flavorIds && existing.flavorIds.length > 0
+          ? existing.flavorIds
+          : allActiveIds,
+      orderDeadlineAt: isoToDatetimeLocalSP(existing?.orderDeadlineAt),
+      exists: !!existing,
+    });
+  }
+
+  async function saveDraft() {
+    if (!draft) return;
+    const payload: AvailableDate = {
+      date: draft.date,
+      capacity: Math.max(1, draft.capacity),
+      startHour: draft.startHour,
+      notes: draft.notes,
+      flavorIds:
+        draft.flavorIds.length === menu.length || draft.flavorIds.length === 0
+          ? []
+          : draft.flavorIds,
+      orderDeadlineAt: datetimeLocalSPToIso(draft.orderDeadlineAt),
+    };
     try {
-      // ✅ NOVO: Incluir orderDeadlineAt na requisição
-      const deadlineAt = formOrderDeadline
-        ? new Date(formOrderDeadline).toISOString()
-        : undefined;
-
-      const res = await fetch('/api/availability', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: formDate,
-          capacity: formCapacity,
-          startHour: formStartHour,
-          orderDeadlineAt: deadlineAt,  // ✅ NOVO
-        }),
+      await upsertAvailability(payload);
+      setList((prev) => {
+        const others = prev.filter((a) => a.date !== draft.date);
+        return [...others, payload].sort((a, b) => a.date.localeCompare(b.date));
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        alert(`Erro: ${err.error}`);
-        return;
-      }
-
-      alert('Domingo aberto com sucesso!');
-
-      // Limpar form
-      setFormDate('');
-      setFormCapacity(8);
-      setFormStartHour('18:00');
-      setFormOrderDeadline('');  // ✅ NOVO
-
-      // Recarregar lista
-      await loadDates();
+      setDraft(null);
+      notify(draft.exists ? 'Data atualizada.' : 'Data aberta.');
     } catch (err) {
-      alert(`Erro: ${err}`);
+      setError(err instanceof Error ? err.message : String(err));
     }
-  };
+  }
 
-  // Remover data
-  const handleRemoveDate = async (date: string) => {
-    if (!confirm(`Tem certeza que quer remover ${date}?`)) return;
-
+  async function closeDate() {
+    if (!draft || !draft.exists) return;
     try {
-      const res = await fetch(`/api/availability/${date}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Erro ao remover');
-      await loadDates();
+      await removeAvailability(draft.date);
+      setList((prev) => prev.filter((a) => a.date !== draft.date));
+      setDraft(null);
+      notify('Data fechada.');
     } catch (err) {
-      alert(`Erro: ${err}`);
+      setError(err instanceof Error ? err.message : String(err));
     }
-  };
+  }
 
-  if (loading) return <div className="p-4">Carregando...</div>;
+  function goPrev() {
+    setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
+  }
+  function goNext() {
+    setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
+  }
+  function goToday() {
+    setCursor(startOfMonth(new Date()));
+  }
+
+  const open = list.slice().sort((a, b) => a.date.localeCompare(b.date));
 
   return (
-    <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Disponibilidade</h1>
+    <div className="space-y-6">
+      <header>
+        <h1
+          className="text-3xl italic text-primary-500"
+          style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+        >
+          Disponibilidade
+        </h1>
+        <p className="text-sm text-primary-500/60">
+          Clique em qualquer dia para abrir, fechar ou editar capacidade e
+          horário de início. Domingo é o padrão, mas você pode produzir em
+          qualquer data.
+        </p>
+      </header>
 
-      {/* Formulário para abrir novo domingo */}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
-        <h2 className="mb-4 text-lg font-semibold">+ Abrir novo domingo</h2>
+      <HelpBanner
+        id="disponibilidade"
+        title="Disponibilidade"
+        whenToFill="Use sempre que decidir abrir um novo dia de produção ou ajustar uma data já aberta."
+        steps={[
+          'Clique no dia do calendário em que vai produzir.',
+          'No modal: defina horário de início (default 18:00), capacidade (quantas pizzas no total), e marque os sabores que vão aparecer pra reserva.',
+          'Salve. O dia fica verde e clientes começam a reservar pelo site.',
+          'Após abrir a data, use o botão "📣 Avisar clientes" pra mandar WhatsApp em massa ou push pra todos.',
+        ]}
+        doNot={[
+          'Não fechar uma data com pedidos confirmados sem avisar os clientes primeiro.',
+          'Não confunda capacity (pizzas no dia) com slots de horário (auto-gerados de 15 em 15 min).',
+        ]}
+        notes='Capacity é só um teto: o site não bloqueia automaticamente, mas serve como referência pro Aurélio acompanhar.'
+      />
 
-        <div className="grid gap-4">
-          {/* Data */}
+      {savedNotice && (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-center text-xs text-emerald-800">
+          ✓ {savedNotice}
+        </p>
+      )}
+
+      <section className="rounded-xl border border-primary-100 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={goPrev}
+            aria-label="Mês anterior"
+            className="rounded-md px-3 py-1 text-primary-500 hover:bg-primary-50"
+          >
+            ‹
+          </button>
+          <div className="flex items-center gap-2">
+            <span
+              className="text-lg italic text-primary-500"
+              style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+            >
+              {MONTHS[cursor.getMonth()]} {cursor.getFullYear()}
+            </span>
+            <button
+              type="button"
+              onClick={goToday}
+              className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] uppercase tracking-widest text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+            >
+              Hoje
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={goNext}
+            aria-label="Próximo mês"
+            className="rounded-md px-3 py-1 text-primary-500 hover:bg-primary-50"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-widest text-primary-400">
+          {WEEKDAYS.map((w) => (
+            <div key={w} className="py-1">{w}</div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-1">
+          {days.map((date, idx) => {
+            if (!date) return <div key={`b-${idx}`} className="aspect-square" />;
+            const iso = formatDateISO(date);
+            const config = byDate.get(iso);
+            const isToday = iso === formatDateISO(today);
+            const isPast = date < today;
+
+            return (
+              <button
+                key={iso}
+                type="button"
+                onClick={() => openDay(date)}
+                className={cn(
+                  'flex aspect-square flex-col items-center justify-center rounded-md border p-1 text-sm transition-colors',
+                  isPast && !config && 'border-primary-100 bg-primary-50/30 text-primary-300',
+                  !isPast && !config && 'border-primary-100 bg-white text-primary-500 hover:border-primary-500',
+                  config && 'border-emerald-400 bg-emerald-50 text-emerald-800 hover:border-emerald-500',
+                  isToday && !config && 'ring-1 ring-accent-500',
+                )}
+              >
+                <span
+                  className={
+                    config
+                      ? 'text-base font-semibold'
+                      : 'text-base'
+                  }
+                >
+                  {date.getDate()}
+                </span>
+                {config && (
+                  <span className="mt-0.5 text-[9px] leading-tight">
+                    {config.startHour} · {config.capacity}p
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-primary-500/60">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm bg-emerald-400" />
+            Aberto
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm border border-primary-300 bg-white" />
+            Fechado
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm border border-accent-500 bg-white" />
+            Hoje
+          </span>
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-primary-500/60">
+          Datas abertas ({open.length})
+        </h2>
+        {open.length === 0 ? (
+          <p className="rounded-xl border border-primary-100 bg-white p-6 text-center text-sm text-primary-500/60">
+            Nenhuma data aberta. Clique em um dia no calendário acima para abrir.
+          </p>
+        ) : (
+          <ul className="grid gap-2 md:grid-cols-2">
+            {open.map((a) => (
+              <li
+                key={a.date}
+                className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3"
+              >
+                <div className="flex flex-col leading-tight">
+                  <span
+                    className="text-base text-primary-500"
+                    style={{
+                      fontFamily: 'var(--font-cormorant), Georgia, serif',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {formatDateBR(new Date(`${a.date}T12:00:00`))}
+                  </span>
+                  <span className="text-[11px] text-primary-500/70">
+                    início {a.startHour} · {a.capacity} pizzas
+                    {a.orderDeadlineAt && (
+                      <>
+                        {' · '}
+                        <span
+                          className={
+                            new Date(a.orderDeadlineAt).getTime() < Date.now()
+                              ? 'text-rose-600'
+                              : 'text-amber-700'
+                          }
+                          title={
+                            new Date(a.orderDeadlineAt).getTime() < Date.now()
+                              ? 'Pedidos já encerrados'
+                              : 'Encerra em'
+                          }
+                        >
+                          🔒{' '}
+                          {new Date(a.orderDeadlineAt).toLocaleString('pt-BR', {
+                            timeZone: 'America/Sao_Paulo',
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </>
+                    )}
+                    {a.notes && ` · ${a.notes}`}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setBroadcastFor(a)}
+                    className="rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs text-emerald-700 hover:border-emerald-500"
+                    title="Mandar WhatsApp pré-formatado para todos os clientes"
+                  >
+                    📣 Avisar clientes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDay(new Date(`${a.date}T12:00:00`))}
+                    className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                  >
+                    Editar
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {draft && (
+        <DayModal
+          draft={draft}
+          menu={menu}
+          onChange={setDraft}
+          onSave={saveDraft}
+          onClose={() => {
+            setDraft(null);
+            setError(null);
+          }}
+          onDelete={closeDate}
+          error={error}
+        />
+      )}
+
+      {broadcastFor && (
+        <BroadcastSheet
+          availability={broadcastFor}
+          customers={customers}
+          menu={menu}
+          onClose={() => setBroadcastFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function BroadcastSheet({
+  availability,
+  customers,
+  menu,
+  onClose,
+}: {
+  availability: AvailableDate;
+  customers: StoredCustomer[];
+  menu: MenuItem[];
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [sentSet, setSentSet] = useState<Set<string>>(new Set());
+  const [pushTitle, setPushTitle] = useState('Della Pace está aberta!');
+  const [pushBody, setPushBody] = useState('');
+  const [pushState, setPushState] = useState<
+    'idle' | 'sending' | 'sent' | 'error'
+  >('idle');
+  const [pushResult, setPushResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    const dateLabel = new Date(`${availability.date}T12:00:00`).toLocaleDateString(
+      'pt-BR',
+      { weekday: 'long', day: '2-digit', month: 'long' },
+    );
+    setPushBody(
+      `Nova edição em ${dateLabel}, início ${availability.startHour}. Reserve no site.`,
+    );
+  }, [availability.date, availability.startHour]);
+
+  async function handleSendPush() {
+    if (!pushTitle.trim() || !pushBody.trim()) return;
+    setPushState('sending');
+    setPushResult(null);
+    try {
+      const res = await sendPushNotification({
+        title: pushTitle.trim(),
+        body: pushBody.trim(),
+        url: '/',
+        tag: `da-${availability.date}`,
+      });
+      setPushState('sent');
+      setPushResult(
+        `Enviado para ${res.success}/${res.total} dispositivos${
+          res.gone > 0 ? ` (${res.gone} expirados removidos)` : ''
+        }${res.failed > 0 ? ` · ${res.failed} falharam` : ''}.`,
+      );
+    } catch (err) {
+      setPushState('error');
+      setPushResult(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const sortable = useMemo(
+    () =>
+      customers
+        .filter((c) => (c.phone ?? '').replace(/\D/g, '').length >= 10)
+        .filter(
+          (c) =>
+            search.trim() === '' ||
+            c.fullName.toLowerCase().includes(search.toLowerCase()),
+        )
+        .slice()
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR')),
+    [customers, search],
+  );
+
+  const dateLabel = formatDateBR(new Date(`${availability.date}T12:00:00`));
+  const sampleMessage =
+    sortable.length > 0
+      ? buildBroadcastMessage({
+          customer: sortable[0],
+          date: availability.date,
+          startHour: availability.startHour,
+          menu,
+          notes: availability.notes,
+          forPreview: true,
+        })
+      : null;
+
+  function markSent(cpf: string) {
+    setSentSet((prev) => {
+      const next = new Set(prev);
+      next.add(cpf);
+      return next;
+    });
+  }
+
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ sent: 0, total: 0 });
+
+  async function sendBulkWhatsApp() {
+    const pending = sortable.filter((c) => !sentSet.has(c.cpf));
+    if (pending.length === 0) {
+      alert('Todos já foram marcados como enviados.');
+      return;
+    }
+    if (
+      !confirm(
+        `Vai abrir ${pending.length} aba${pending.length === 1 ? '' : 's'} do WhatsApp em sequência (com 1s de intervalo). ` +
+          'Pode demorar. Permita pop-ups se o navegador pedir. Continuar?',
+      )
+    )
+      return;
+    setBulkBusy(true);
+    setBulkProgress({ sent: 0, total: pending.length });
+    for (let i = 0; i < pending.length; i++) {
+      const c = pending[i];
+      const link = broadcastWhatsAppLink({
+        customer: c,
+        date: availability.date,
+        startHour: availability.startHour,
+        menu,
+        notes: availability.notes,
+      });
+      window.open(link, '_blank', 'noopener,noreferrer');
+      markSent(c.cpf);
+      setBulkProgress({ sent: i + 1, total: pending.length });
+      // Delay menor entre primeiros (evita popup blocker), maior depois
+      await new Promise((r) => setTimeout(r, i < 3 ? 200 : 1000));
+    }
+    setBulkBusy(false);
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-primary-900/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-xl"
+      >
+        <header className="border-b border-primary-100 p-5">
+          <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+            Avisar clientes via WhatsApp
+          </p>
+          <h2
+            className="text-2xl italic text-primary-500"
+            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+          >
+            {dateLabel} · início {availability.startHour}
+          </h2>
+          <p className="mt-1 text-xs text-primary-500/60">
+            Cada botão abre o WhatsApp da pessoa com a mensagem já pronta.
+            Você só precisa apertar enviar.
+          </p>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <section className="mb-5 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+            <p className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-amber-800">
+              🔔 Push para todo mundo (1 clique)
+            </p>
+            <p className="mb-3 text-[11px] text-amber-900/80">
+              Notifica de uma vez todos os clientes que aceitaram receber
+              avisos no celular. Use textos curtos.
+            </p>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={pushTitle}
+                onChange={(e) => setPushTitle(e.target.value)}
+                maxLength={80}
+                placeholder="Título"
+                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+              />
+              <textarea
+                value={pushBody}
+                onChange={(e) => setPushBody(e.target.value)}
+                maxLength={240}
+                rows={2}
+                placeholder="Mensagem curta"
+                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSendPush}
+                  disabled={pushState === 'sending'}
+                  className="rounded-full bg-amber-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-60"
+                >
+                  {pushState === 'sending' ? 'Enviando…' : 'Enviar push agora'}
+                </button>
+                {pushResult && (
+                  <span
+                    className={
+                      pushState === 'sent'
+                        ? 'text-[11px] text-emerald-700'
+                        : 'text-[11px] text-rose-700'
+                    }
+                  >
+                    {pushResult}
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-widest text-primary-500/60">
+              WhatsApp por cliente (mensagem completa)
+            </p>
+            <button
+              type="button"
+              onClick={sendBulkWhatsApp}
+              disabled={bulkBusy || sortable.length === 0}
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {bulkBusy
+                ? `Abrindo ${bulkProgress.sent}/${bulkProgress.total}…`
+                : '📢 Abrir todos'}
+            </button>
+          </div>
+
+          {sampleMessage && (
+            <details className="mb-4 rounded-lg border border-primary-100 bg-primary-50/30 p-3">
+              <summary className="cursor-pointer text-xs font-medium uppercase tracking-widest text-primary-500/70">
+                Pré-visualizar mensagem
+              </summary>
+              <pre className="mt-2 whitespace-pre-wrap rounded bg-white p-3 text-[11px] leading-relaxed text-primary-500">
+                {sampleMessage}
+              </pre>
+            </details>
+          )}
+
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filtrar por nome…"
+            className="mb-3 w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+          />
+
+          {sortable.length === 0 ? (
+            <p className="rounded-xl border border-primary-100 bg-white p-6 text-center text-sm text-primary-500/60">
+              Nenhum cliente com WhatsApp no cadastro.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {sortable.map((c) => {
+                const sent = sentSet.has(c.cpf);
+                const link = broadcastWhatsAppLink({
+                  customer: c,
+                  date: availability.date,
+                  startHour: availability.startHour,
+                  menu,
+                  notes: availability.notes,
+                });
+                return (
+                  <li
+                    key={c.cpf}
+                    className={cn(
+                      'flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3',
+                      sent
+                        ? 'border-emerald-200 bg-emerald-50/40'
+                        : 'border-primary-100 bg-white',
+                    )}
+                  >
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-sm font-medium text-primary-500">
+                        {c.fullName}
+                      </span>
+                      <span className="text-[11px] text-primary-500/60">
+                        {c.phone}
+                      </span>
+                    </div>
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => markSent(c.cpf)}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs',
+                        sent
+                          ? 'border border-emerald-300 bg-white text-emerald-700'
+                          : 'bg-emerald-500 text-white hover:bg-emerald-600',
+                      )}
+                    >
+                      {sent ? '✓ Enviado' : '📨 Abrir WhatsApp'}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <footer className="flex items-center justify-between gap-2 border-t border-primary-100 p-4">
+          <p className="text-[11px] text-primary-500/60">
+            {sentSet.size} de {sortable.length} marcados como enviados
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-primary-200 px-4 py-1.5 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+          >
+            Fechar
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function DayModal({
+  draft,
+  menu,
+  onChange,
+  onSave,
+  onClose,
+  onDelete,
+  error,
+}: {
+  draft: Draft;
+  menu: MenuItem[];
+  onChange: (d: Draft) => void;
+  onSave: () => void;
+  onClose: () => void;
+  onDelete: () => void;
+  error: string | null;
+}) {
+  const dateLabel = formatDateBR(new Date(`${draft.date}T12:00:00`));
+
+  function toggleFlavor(id: string) {
+    const has = draft.flavorIds.includes(id);
+    onChange({
+      ...draft,
+      flavorIds: has
+        ? draft.flavorIds.filter((x) => x !== id)
+        : [...draft.flavorIds, id],
+    });
+  }
+  function selectAll() {
+    onChange({ ...draft, flavorIds: menu.map((m) => m.id) });
+  }
+  function clearAll() {
+    onChange({ ...draft, flavorIds: [] });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-primary-900/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-primary-100 bg-white p-6 shadow-xl"
+      >
+        <header className="mb-4">
+          <p className="text-[10px] uppercase tracking-widest text-primary-500/60">
+            {draft.exists ? 'Editar data' : 'Abrir nova data'}
+          </p>
+          <h2
+            className="text-2xl italic text-primary-500"
+            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+          >
+            {dateLabel}
+          </h2>
+        </header>
+
+        <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
           <label className="block">
-            <span className="text-sm font-medium">📅 Data</span>
-            <input
-              type="date"
-              value={formDate}
-              onChange={(e) => setFormDate(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-
-          {/* Capacidade */}
-          <label className="block">
-            <span className="text-sm font-medium">📦 Capacidade (pizzas)</span>
-            <input
-              type="number"
-              value={formCapacity}
-              onChange={(e) => setFormCapacity(parseInt(e.target.value) || 8)}
-              min="1"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-
-          {/* Horário de início */}
-          <label className="block">
-            <span className="text-sm font-medium">⏰ Horário de início</span>
+            <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+              Horário do primeiro pedido
+            </span>
             <input
               type="time"
-              value={formStartHour}
-              onChange={(e) => setFormStartHour(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+              step={900}
+              value={draft.startHour}
+              onChange={(e) => onChange({ ...draft, startHour: e.target.value })}
+              className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
             />
-          </label>
-
-          {/* ✅ NOVO: Campo de deadline */}
-          <label className="block">
-            <span className="text-sm font-medium">⏰ Fechar pedidos em</span>
-            <input
-              type="datetime-local"
-              value={formOrderDeadline}
-              onChange={(e) => setFormOrderDeadline(e.target.value)}
-              placeholder="2026-05-29T23:59"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Deixe vazio para aceitar pedidos até o domingo. Exemplo: sexta
-              23:59
+            <p className="mt-1 text-[10px] text-primary-500/60">
+              Slots de 15 em 15 min começam neste horário e vão até 23:00.
             </p>
           </label>
 
-          <button
-            onClick={handleOpenDate}
-            className="rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
-          >
-            Abrir domingo
-          </button>
-        </div>
-      </div>
+          <label className="block">
+            <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+              Capacidade (pizzas no dia)
+            </span>
+            <input
+              type="number"
+              min={1}
+              value={draft.capacity}
+              onChange={(e) =>
+                onChange({
+                  ...draft,
+                  capacity: parseInt(e.target.value) || 1,
+                })
+              }
+              className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+          </label>
 
-      {/* Lista de domingos abertos */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Domingos abertos</h2>
-
-        {dates.length === 0 ? (
-          <p className="text-gray-500">Nenhum domingo aberto</p>
-        ) : (
-          dates.map((d) => (
-            <div
-              key={d.date}
-              className="flex items-center justify-between rounded-lg border border-gray-200 p-4"
-            >
-              <div>
-                <div className="font-semibold">
-                  {new Date(`${d.date}T12:00:00`).toLocaleDateString('pt-BR', {
-                    weekday: 'long',
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                  })}
-                </div>
-                <div className="text-sm text-gray-600">
-                  📦 {d.capacity} pizzas • ⏰ {d.startHour}
-                  {/* ✅ NOVO: Mostrar deadline se existir */}
-                  {d.orderDeadlineAt && (
-                    <>
-                      {' '}
-                      • 🔒 Pedidos até{' '}
-                      {new Date(d.orderDeadlineAt).toLocaleString('pt-BR', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </>
-                  )}
-                </div>
-              </div>
-
+          <label className="block">
+            <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+              ⏰ Encerramento dos pedidos (opcional)
+            </span>
+            <input
+              type="datetime-local"
+              value={draft.orderDeadlineAt}
+              onChange={(e) =>
+                onChange({ ...draft, orderDeadlineAt: e.target.value })
+              }
+              className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+            <p className="mt-1 text-[10px] text-primary-500/60">
+              Após esse instante, novos pedidos para essa data são bloqueados no
+              site público. Deixe vazio pra aceitar até o último momento. Ex:
+              sexta 23:59 (horário de Brasília).
+            </p>
+            {draft.orderDeadlineAt && (
               <button
-                onClick={() => handleRemoveDate(d.date)}
-                className="rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
+                type="button"
+                onClick={() => onChange({ ...draft, orderDeadlineAt: '' })}
+                className="mt-1 text-[10px] text-primary-500/70 underline hover:text-primary-500"
               >
-                ✕
+                limpar deadline
               </button>
+            )}
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+              Observações (opcional)
+            </span>
+            <input
+              type="text"
+              value={draft.notes}
+              onChange={(e) => onChange({ ...draft, notes: e.target.value })}
+              placeholder="Edição especial, fornada extra…"
+              className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+            />
+          </label>
+
+          <div className="rounded-lg border border-primary-100 bg-primary-50/30 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                Sabores ativos nessa edição
+              </span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={selectAll}
+                  className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] text-primary-500/70 hover:border-primary-500"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="rounded-full border border-primary-200 px-2 py-0.5 text-[10px] text-primary-500/70 hover:border-primary-500"
+                >
+                  Nenhum
+                </button>
+              </div>
             </div>
-          ))
-        )}
+            {menu.length === 0 ? (
+              <p className="text-[11px] text-primary-500/60">
+                Nenhum sabor ativo no Cardápio. Adicione sabores em Cardápio
+                primeiro.
+              </p>
+            ) : (
+              <ul className="grid grid-cols-2 gap-1.5">
+                {menu.map((m) => {
+                  const checked = draft.flavorIds.includes(m.id);
+                  return (
+                    <li key={m.id}>
+                      <label
+                        className={
+                          checked
+                            ? 'flex cursor-pointer items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900'
+                            : 'flex cursor-pointer items-center gap-2 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-xs text-primary-500/70'
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleFlavor(m.id)}
+                        />
+                        <span className="truncate">{m.name}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <p className="mt-2 text-[10px] text-primary-500/50">
+              Marque os sabores que vão aparecer pra reserva neste dia. Se
+              todos estiverem marcados, o site mostra o cardápio completo.
+            </p>
+          </div>
+
+          {error && (
+            <p className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <footer className="mt-6 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded-full bg-primary-500 px-5 py-2 text-sm text-white hover:bg-primary-600"
+          >
+            {draft.exists ? 'Salvar' : 'Abrir data'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-primary-200 px-4 py-2 text-sm text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+          >
+            Cancelar
+          </button>
+          {draft.exists && (
+            <>
+              <span className="ml-auto" />
+              <button
+                type="button"
+                onClick={onDelete}
+                className="rounded-full border border-rose-200 px-4 py-2 text-sm text-rose-600 hover:border-rose-500"
+              >
+                Fechar data
+              </button>
+            </>
+          )}
+        </footer>
       </div>
     </div>
   );

@@ -11,17 +11,16 @@ import {
   fetchStock,
   updateMenuItem,
 } from '@/lib/api';
-import { CATEGORY_LABEL, type Product } from '@/lib/products';
+import { type Product } from '@/lib/products';
 import {
   calcMargin,
   calcRecipeCost,
-  ingredientCost,
   newMenuId,
   type MenuItem,
   type RecipeIngredient,
 } from '@/lib/menu';
 import { type StockItem } from '@/lib/stock';
-import { RECIPE_UNITS, isCompatible } from '@/lib/units';
+import { RECIPE_UNITS } from '@/lib/units';
 
 export default function CardapioPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
@@ -429,8 +428,6 @@ export default function CardapioPage() {
                               </li>
                             );
                           }
-                          const prod = products.find((p) => p.id === ing.productId);
-                          const incompat = false;
                           return (
                             <li
                               key={idx}

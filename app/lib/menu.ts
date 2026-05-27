@@ -2,8 +2,14 @@ import type { StockItem } from '@/lib/stock';
 import { convertAmount, isCompatible } from '@/lib/units';
 
 export type RecipeIngredient = {
-  stockItemId: string;
+  /**
+   * Legado. Não exigido para ingredientes novos cadastrados via Produtos.
+   * Mantido para compatibilidade com receitas antigas que apontavam para stock_items.
+   */
+  stockItemId?: string | null;
+  /** Vincula ao catálogo de Produtos (caminho preferencial pra ingredientes novos). */
   productId?: number | null;
+  /** Sub-receita (ex: base-disco, base-concha). Mutuamente exclusivo com productId/stockItemId. */
   componentMenuId?: string | null;
   amount: number;
   unit: string;
@@ -112,10 +118,14 @@ export function calcRecipeCost(
       if (!comp) return sum;
       return sum + ing.amount * calcRecipeCost(comp, stock, menu, visited);
     }
-    // Ingrediente normal (vinculado ao stock_items)
-    const stk = stock.find((s) => s.id === ing.stockItemId);
-    if (!stk) return sum;
-    return sum + ingredientCost(ing, stk);
+    // Ingrediente normal: tenta resolver por stockItemId (legado) ou productId (novo)
+    const stk = ing.stockItemId
+      ? stock.find((s) => s.id === ing.stockItemId)
+      : undefined;
+    if (stk) return sum + ingredientCost(ing, stk);
+    // Sem stock vinculado: usa preço médio do produto via tabela de purchases.
+    // (Implementação futura — por ora, sem custo, vira 0 e mostra fallback no UI.)
+    return sum;
   }, 0);
 }
 
