@@ -1,272 +1,714 @@
-// /app/admin/cardapio/page.tsx - VERSÃO CORRIGIDA
-// Mudanças principais:
-// 1. Linha 42: Remove filtro que ocultava produtos novos
-// 2. Função addIngredient (linha ~120): Usa products ao invés de stock
-// 3. Select de ingredientes (linha ~442): Mapeia sobre products, não stock
-// 4. Tipo RecipeIngredient: Usa productId ao invés de stockItemId
-
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-
-export interface Product {
-  id: number;
-  name: string;
-  brand?: string;
-  unit?: string;
-  active?: boolean;
-}
-
-export interface RecipeIngredient {
-  productId?: number | null;  // ✅ MUDOU de stockItemId para productId
-  amount: number;
-  unit: string;
-}
-
-export interface MenuItem {
-  id: string;
-  name: string;
-  category: string;
-  ingredients?: RecipeIngredient[];
-}
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import HelpBanner from '@/components/admin/HelpBanner';
+import {
+  createMenuItem,
+  deleteMenuItem,
+  fetchMenu,
+  fetchProducts,
+  fetchStock,
+  updateMenuItem,
+} from '@/lib/api';
+import { CATEGORY_LABEL, type Product } from '@/lib/products';
+import {
+  calcMargin,
+  calcRecipeCost,
+  ingredientCost,
+  newMenuId,
+  type MenuItem,
+  type RecipeIngredient,
+} from '@/lib/menu';
+import { type StockItem } from '@/lib/stock';
+import { RECIPE_UNITS, isCompatible } from '@/lib/units';
 
 export default function CardapioPage() {
-  const router = useRouter();
   const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [stock, setStock] = useState<StockItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  // Carregar dados
   useEffect(() => {
-    const load = async () => {
-      try {
-        // Carregar products da API
-        const productsRes = await fetch('/api/products');
-        if (!productsRes.ok) throw new Error('Erro ao carregar produtos');
-        const p = await productsRes.json();
-
-        // ✅ FIX #1: Mostrar TODOS os produtos, sem filtro de active
-        // ANTES: setProducts(p.filter((x) => x.active));
-        // DEPOIS:
-        setProducts(p);
-
-        // Carregar menu da API
-        const menuRes = await fetch('/api/menu');
-        if (!menuRes.ok) throw new Error('Erro ao carregar cardápio');
-        const m = await menuRes.json();
-        setMenu(Array.isArray(m) ? m : []);
-      } catch (err) {
-        console.error('Erro:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    Promise.all([
+      fetchMenu(),
+      fetchStock(),
+      fetchProducts().catch(() => [] as Product[]),
+    ])
+      .then(([m, s, p]) => {
+        setMenu(m);
+        setStock(s);
+        setProducts(p.filter((x) => x.active));
+      })
+      .catch(() => {});
   }, []);
 
-  // ✅ FIX #2: addIngredient usa products[0] ao invés de stock[0]
-  // ANTES:
-  // const firstStock = stock[0];
-  // const nextIngredient: RecipeIngredient = {
-  //   stockItemId: firstStock.id,
-  //   amount: 0,
-  //   unit: firstStock.unit,
-  // };
-  // DEPOIS:
-  const addIngredient = useCallback((menuItemId: string) => {
-    const item = menu.find((m) => m.id === menuItemId);
-    if (!item) return;
+  function notify() {
+    setSavedNotice('Cardápio atualizado.');
+    setTimeout(() => setSavedNotice(null), 2000);
+  }
 
-    const firstProduct = products[0];
-    if (!firstProduct) {
-      alert('Crie um produto em /admin/produtos primeiro');
-      return;
-    }
-
-    const nextIngredient: RecipeIngredient = {
-      productId: firstProduct.id,  // ✅ Usa productId agora
-      amount: 0,
-      unit: firstProduct.unit ?? 'un',
-    };
-
-    update(menuItemId, {
-      ingredients: [...(item.ingredients ?? []), nextIngredient],
-    });
-  }, [menu, products]);
-
-  const updateIngredient = useCallback((
-    menuItemId: string,
-    ingredientIndex: number,
-    updates: Partial<RecipeIngredient>
-  ) => {
-    const item = menu.find((m) => m.id === menuItemId);
-    if (!item?.ingredients) return;
-
-    const updated = [...item.ingredients];
-    updated[ingredientIndex] = { ...updated[ingredientIndex], ...updates };
-    update(menuItemId, { ingredients: updated });
-  }, [menu]);
-
-  const removeIngredient = useCallback((
-    menuItemId: string,
-    ingredientIndex: number
-  ) => {
-    const item = menu.find((m) => m.id === menuItemId);
-    if (!item?.ingredients) return;
-
-    const updated = item.ingredients.filter((_, i) => i !== ingredientIndex);
-    update(menuItemId, { ingredients: updated });
-  }, [menu]);
-
-  const update = async (menuItemId: string, updates: Partial<MenuItem>) => {
+  async function update(id: string, patch: Partial<MenuItem>) {
+    setMenu((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
     try {
-      const item = menu.find((m) => m.id === menuItemId);
-      if (!item) return;
-
-      const updated = { ...item, ...updates };
-
-      const res = await fetch(`/api/menu/${menuItemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      });
-
-      if (!res.ok) throw new Error('Erro ao salvar');
-
-      setMenu((prev) =>
-        prev.map((m) => (m.id === menuItemId ? updated : m))
-      );
+      await updateMenuItem(id, patch);
+      notify();
     } catch (err) {
-      alert(`Erro ao salvar: ${err}`);
+      alert(`Erro ao salvar: ${err instanceof Error ? err.message : err}`);
     }
-  };
+  }
 
-  if (loading) return <div className="p-4">Carregando...</div>;
+  async function remove(id: string, name: string) {
+    const typed = prompt(
+      `Remover "${name}" permanentemente? Digite EXCLUIR (em maiúsculas) pra confirmar:`,
+    );
+    if (typed?.trim().toUpperCase() !== 'EXCLUIR') return;
+    setMenu((prev) => prev.filter((m) => m.id !== id));
+    await deleteMenuItem(id);
+    notify();
+  }
+
+  async function add() {
+    const hasDisco = menu.some((m) => m.id === 'base-disco');
+    const hasConcha = menu.some((m) => m.id === 'base-concha');
+    const baseIngredients: RecipeIngredient[] = [];
+    if (hasDisco) {
+      baseIngredients.push({
+        stockItemId: '',
+        productId: null,
+        componentMenuId: 'base-disco',
+        amount: 1,
+        unit: 'un',
+      });
+    }
+    if (hasConcha) {
+      baseIngredients.push({
+        stockItemId: '',
+        productId: null,
+        componentMenuId: 'base-concha',
+        amount: 1,
+        unit: 'un',
+      });
+    }
+    const novo: MenuItem = {
+      id: newMenuId(),
+      name: 'Novo sabor',
+      description: '',
+      price: 0,
+      cost: 0,
+      ingredients: baseIngredients,
+      active: true,
+      type: 'pizza',
+    };
+    setMenu((prev) => [...prev, novo]);
+    setExpanded(novo.id);
+    await createMenuItem(novo);
+    if (baseIngredients.length > 0) {
+      // Persiste os ingredientes-base via PATCH (createMenuItem só cria o item)
+      await updateMenuItem(novo.id, { ingredients: baseIngredients });
+    }
+    notify();
+  }
+
+  function addIngredient(itemId: string) {
+    const it = menu.find((m) => m.id === itemId);
+    if (!it) return;
+    const firstStock = stock[0];
+    if (!firstStock) return;
+    const nextIngredient: RecipeIngredient = {
+      stockItemId: firstStock.id,
+      amount: 0,
+      unit: firstStock.unit,
+    };
+    update(itemId, { ingredients: [...(it.ingredients ?? []), nextIngredient] });
+  }
+
+  function updateIngredient(
+    itemId: string,
+    idx: number,
+    patch: Partial<RecipeIngredient>,
+  ) {
+    const it = menu.find((m) => m.id === itemId);
+    if (!it) return;
+    const nextIngs = (it.ingredients ?? []).map((ing, i) =>
+      i === idx ? { ...ing, ...patch } : ing,
+    );
+    update(itemId, { ingredients: nextIngs });
+  }
+
+  function removeIngredient(itemId: string, idx: number) {
+    const it = menu.find((m) => m.id === itemId);
+    if (!it) return;
+    update(itemId, {
+      ingredients: (it.ingredients ?? []).filter((_, i) => i !== idx),
+    });
+  }
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold">Cardápio</h1>
-
-      <div className="space-y-6">
-        {menu.map((item) => (
-          <div
-            key={item.id}
-            className="rounded-lg border border-gray-200 p-4"
-            onClick={() => setSelectedItem(selectedItem === item.id ? null : item.id)}
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1
+            className="text-3xl italic text-primary-500"
+            style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold">{item.name}</h2>
-                <p className="text-sm text-gray-500">{item.category}</p>
-              </div>
-              <span className="text-gray-400">
-                {selectedItem === item.id ? '▼' : '▶'}
-              </span>
-            </div>
+            Cardápio
+          </h1>
+          <p className="text-sm text-primary-500/60">
+            Monte cada pizza com ingredientes do estoque. O custo real é
+            calculado automaticamente.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={add}
+          className="rounded-full bg-primary-500 px-4 py-2 text-sm text-white hover:bg-primary-600"
+        >
+          + Adicionar sabor
+        </button>
+      </header>
 
-            {selectedItem === item.id && (
-              <div className="mt-4 space-y-3 border-t pt-4">
-                <h3 className="font-medium">Ingredientes</h3>
+      <HelpBanner
+        id="cardapio"
+        title="Cardápio"
+        whenToFill="Sempre que quiser criar um sabor novo, alterar preço, descrição ou trocar a receita."
+        steps={[
+          'Clique "+ Adicionar sabor" pra criar um novo.',
+          'Clique no nome do sabor pra abrir o editor (nome, descrição, preço).',
+          'Adicione ingredientes da receita (vinculados ao Estoque) pra calcular o custo real automaticamente.',
+          'Use o botão Excluir pra remover um sabor que não vai mais oferecer.',
+          'Sabor inativo (toggle "ativo") fica salvo mas some do site público.',
+        ]}
+        doNot={[
+          'Aqui é o catálogo de SABORES (Marguerita, Calabria…), NÃO de ingredientes. Ingredientes vão em Produtos.',
+        ]}
+        notes='Margem >=50% verde, >=30% amarelo, abaixo vermelho. Use isso pra ajustar o preço.'
+      />
 
-                {item.ingredients?.map((ing, idx) => {
-                  const selectedProduct = products.find(
-                    (p) => p.id === ing.productId
-                  );
+      {stock.length === 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          ⚠️ Você ainda não tem produtos no estoque. Para montar receitas com
+          custo real, primeiro cadastre os ingredientes em{' '}
+          <Link
+            href="/admin/estoque"
+            className="font-medium underline hover:no-underline"
+          >
+            Estoque
+          </Link>
+          . Enquanto isso, o "custo manual" é usado como fallback.
+        </div>
+      )}
 
-                  return (
-                    <div
-                      key={idx}
-                      className="grid grid-cols-10 items-end gap-2 rounded bg-gray-50 p-3"
-                    >
-                      {/* ✅ FIX #3: Select agora mapeia sobre products, não stock */}
-                      {/* ANTES:
-                      <select value={ing.stockItemId} onChange={(e) => {
-                        const newStock = stock.find((s) => s.id === e.target.value);
-                        updateIngredient(item.id, idx, {
-                          stockItemId: e.target.value,
-                          unit: newStock?.unit ?? ing.unit,
-                        });
-                      }}>
-                        {stock.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} · {s.brand}
-                          </option>
-                        ))}
-                      </select>
-                      */}
+      {savedNotice && (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-center text-xs text-emerald-800">
+          ✓ {savedNotice}
+        </p>
+      )}
 
-                      {/* DEPOIS: */}
-                      <select
-                        value={ing.productId ?? ''}
-                        onChange={(e) => {
-                          const newProduct = products.find(
-                            (p) => p.id === parseInt(e.target.value)
-                          );
-                          updateIngredient(item.id, idx, {
-                            productId: e.target.value ? parseInt(e.target.value) : null,
-                            unit: newProduct?.unit ?? ing.unit,
-                          });
-                        }}
-                        className="col-span-5 rounded border border-gray-300 px-2 py-1 text-sm"
-                      >
-                        <option value="">-- Selecione --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} {p.brand ? ` · ${p.brand}` : ''}
-                          </option>
-                        ))}
-                      </select>
-
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={ing.amount}
-                        onChange={(e) =>
-                          updateIngredient(item.id, idx, {
-                            amount: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        placeholder="Qtd"
-                        className="col-span-2 rounded border border-gray-300 px-2 py-1 text-sm"
-                      />
-
-                      <select
-                        value={ing.unit}
-                        onChange={(e) =>
-                          updateIngredient(item.id, idx, { unit: e.target.value })
-                        }
-                        className="col-span-2 rounded border border-gray-300 px-2 py-1 text-sm"
-                      >
-                        <option>un</option>
-                        <option>g</option>
-                        <option>kg</option>
-                        <option>ml</option>
-                        <option>l</option>
-                      </select>
-
-                      <button
-                        onClick={() => removeIngredient(item.id, idx)}
-                        className="col-span-1 rounded bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })}
-
+      {(() => {
+        // Agrupa: receitas-base (Massa: Disco · Molho: Concha) primeiro, pizzas embaixo
+        const baseDisco = menu.filter((m) => m.id === 'base-disco');
+        const baseConcha = menu.filter((m) => m.id === 'base-concha');
+        const pizzas = menu.filter(
+          (m) => m.type !== 'base' && m.id !== 'base-disco' && m.id !== 'base-concha',
+        );
+        const groups: {
+          title: string;
+          subtitle: string;
+          items: MenuItem[];
+          containerCls: string;
+          titleCls: string;
+        }[] = [];
+        if (baseDisco.length)
+          groups.push({
+            title: 'Massa',
+            subtitle: 'Receita base — usada por todas as pizzas',
+            items: baseDisco,
+            containerCls: 'border-amber-300 bg-amber-100/60',
+            titleCls: 'text-amber-900',
+          });
+        if (baseConcha.length)
+          groups.push({
+            title: 'Molho',
+            subtitle: 'Receita base — usada por todas as pizzas',
+            items: baseConcha,
+            containerCls: 'border-rose-300 bg-rose-100/60',
+            titleCls: 'text-rose-900',
+          });
+        groups.push({
+          title: 'Pizzas',
+          subtitle: `${pizzas.length} sabor${pizzas.length === 1 ? '' : 'es'} no cardápio`,
+          items: pizzas,
+          containerCls: 'border-emerald-300 bg-emerald-100/60',
+          titleCls: 'text-emerald-900',
+        });
+        return groups.map((group) => (
+          <section
+            key={group.title}
+            className={`rounded-xl border-2 p-5 space-y-3 ${group.containerCls}`}
+          >
+            <header className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2
+                className={`text-2xl italic ${group.titleCls}`}
+                style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+              >
+                {group.title}
+              </h2>
+              <p className={`text-xs ${group.titleCls} opacity-80`}>{group.subtitle}</p>
+            </header>
+            {group.items.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-primary-200 p-4 text-center text-xs text-primary-500/60">
+                Vazio.
+              </p>
+            ) : (
+              group.items.map((m) => {
+                const recipeCost = calcRecipeCost(m, stock, menu);
+                const usingRecipe = (m.ingredients?.length ?? 0) > 0;
+                const cost = usingRecipe ? recipeCost : m.cost;
+                const margin = calcMargin({ price: m.price, cost });
+                const isExpanded = expanded === m.id;
+                return (
+            <article
+              key={m.id}
+              className="overflow-hidden rounded-xl border border-primary-100 bg-white shadow-sm"
+            >
+              <div className="flex flex-wrap items-center gap-3 border-b border-primary-100 p-4">
                 <button
-                  onClick={() => addIngredient(item.id)}
-                  className="w-full rounded border-2 border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-gray-400"
+                  type="button"
+                  onClick={() => setExpanded(isExpanded ? null : m.id)}
+                  className="flex-1 text-left"
                 >
-                  + Adicionar Ingrediente
+                  <p
+                    className="text-xl text-primary-500"
+                    style={{
+                      fontFamily: 'var(--font-cormorant), Georgia, serif',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {m.name}
+                  </p>
+                  <p className="text-xs text-primary-500/60">
+                    R$ {m.price} · custo R$ {cost.toFixed(2)} · margem{' '}
+                    {margin.marginPct.toFixed(0)}%
+                  </p>
+                </button>
+                <span
+                  className={
+                    margin.marginPct >= 50
+                      ? 'rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800'
+                      : margin.marginPct >= 30
+                        ? 'rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800'
+                        : 'rounded-full bg-rose-100 px-2 py-0.5 text-xs text-rose-800'
+                  }
+                >
+                  {margin.marginPct.toFixed(0)}%
+                </span>
+                <label className="flex items-center gap-2 text-xs text-primary-500/70">
+                  <input
+                    type="checkbox"
+                    checked={m.active}
+                    onChange={(e) => update(m.id, { active: e.target.checked })}
+                  />
+                  ativo
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isExpanded ? null : m.id)}
+                  className="rounded-full border border-primary-200 px-3 py-1 text-xs text-primary-500/70 hover:border-primary-500 hover:text-primary-500"
+                >
+                  {isExpanded ? '▲ recolher' : '▼ editar'}
                 </button>
               </div>
+
+              {isExpanded && (
+                <div className="space-y-4 p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field
+                      label="Nome"
+                      value={m.name}
+                      onChange={(v) => update(m.id, { name: v })}
+                    />
+                    <NumField
+                      label="Preço de venda R$"
+                      value={m.price}
+                      onChange={(v) => update(m.id, { price: v })}
+                    />
+                    {m.type !== 'base' && (
+                      <label className="block md:col-span-2">
+                        <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+                          Categoria (usada no BI)
+                        </span>
+                        <select
+                          value={m.category ?? ''}
+                          onChange={(e) =>
+                            update(m.id, { category: e.target.value || null })
+                          }
+                          className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="">— sem categoria —</option>
+                          <option value="Clássica">Clássica</option>
+                          <option value="Especial">Especial</option>
+                          <option value="Doce">Doce</option>
+                          <option value="Vegetariana">Vegetariana</option>
+                        </select>
+                      </label>
+                    )}
+                    <div className="md:col-span-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+                          Descrição
+                        </span>
+                        <textarea
+                          rows={2}
+                          value={m.description}
+                          onChange={(e) =>
+                            update(m.id, { description: e.target.value })
+                          }
+                          className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-primary-100 bg-primary-50/30 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-xs font-medium uppercase tracking-widest text-primary-500/60">
+                        Ingredientes (custo real)
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => addIngredient(m.id)}
+                        disabled={stock.length === 0}
+                        className="rounded-full border border-primary-500 px-3 py-1 text-xs text-primary-500 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-primary-500 hover:text-white"
+                      >
+                        + Ingrediente
+                      </button>
+                    </div>
+
+                    {(m.ingredients ?? []).length === 0 ? (
+                      <p className="text-xs text-primary-500/60">
+                        Nenhum ingrediente. {stock.length === 0
+                          ? 'Cadastre produtos no Estoque primeiro.'
+                          : 'Clique em "+ Ingrediente" para adicionar.'}
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {(m.ingredients ?? []).map((ing, idx) => {
+                          // Componente (Disco/Concha) — renderiza diferente
+                          if (ing.componentMenuId) {
+                            const comp = menu.find((mi) => mi.id === ing.componentMenuId);
+                            const compCost = comp ? calcRecipeCost(comp, stock, menu) : 0;
+                            const isDisco = ing.componentMenuId === 'base-disco';
+                            return (
+                              <li
+                                key={idx}
+                                className={`flex items-center gap-2 rounded-md border-2 p-2 text-sm ${
+                                  isDisco
+                                    ? 'border-amber-300 bg-amber-50'
+                                    : 'border-rose-300 bg-rose-50'
+                                }`}
+                              >
+                                <span className="text-lg">{isDisco ? '🍞' : '🍅'}</span>
+                                <div className="flex-1">
+                                  <p className="font-medium text-primary-500">
+                                    {comp?.name ?? ing.componentMenuId}
+                                  </p>
+                                  <p className="text-[10px] text-primary-500/60">
+                                    Receita base · 1 por pizza · custo R$ {compCost.toFixed(2)}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeIngredient(m.id, idx)}
+                                  className="rounded-full border border-rose-200 px-2 py-1 text-[10px] text-rose-600 hover:bg-rose-50"
+                                  title="Remover (não recomendado)"
+                                >
+                                  ×
+                                </button>
+                              </li>
+                            );
+                          }
+                          const stk = stock.find((s) => s.id === ing.stockItemId);
+                          const cost = stk ? ingredientCost(ing, stk) : 0;
+                          const incompat = stk && !isCompatible(ing.unit, stk.unit);
+                          return (
+                            <li
+                              key={idx}
+                              className="grid grid-cols-12 items-center gap-2 rounded-md border border-primary-100 bg-white p-2 text-sm"
+                            >
+                              <select
+                                value={ing.stockItemId}
+                                onChange={(e) => {
+                                  const newStock = stock.find(
+                                    (s) => s.id === e.target.value,
+                                  );
+                                  updateIngredient(m.id, idx, {
+                                    stockItemId: e.target.value,
+                                    unit: newStock?.unit ?? ing.unit,
+                                  });
+                                }}
+                                className="col-span-5 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-sm"
+                              >
+                                {stock.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                    {s.brand ? ` · ${s.brand}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.5"
+                                value={ing.amount || ''}
+                                onChange={(e) =>
+                                  updateIngredient(m.id, idx, {
+                                    amount: parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="col-span-2 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-sm"
+                                placeholder="0"
+                              />
+                              <select
+                                value={ing.unit}
+                                onChange={(e) =>
+                                  updateIngredient(m.id, idx, {
+                                    unit: e.target.value,
+                                  })
+                                }
+                                className="col-span-2 rounded-md border border-primary-200 bg-white px-2 py-1.5 text-sm"
+                              >
+                                {RECIPE_UNITS.map((u) => (
+                                  <option key={u} value={u}>
+                                    {u}
+                                  </option>
+                                ))}
+                              </select>
+                              <span
+                                className={`col-span-2 text-right text-xs ${
+                                  incompat ? 'text-rose-600' : 'text-primary-500/80'
+                                }`}
+                              >
+                                {incompat
+                                  ? '⚠ unidade'
+                                  : `R$ ${cost.toFixed(2)}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeIngredient(m.id, idx)}
+                                className="col-span-1 text-right text-xs text-rose-600 hover:underline"
+                              >
+                                ×
+                              </button>
+                              <div className="col-span-12 mt-1 flex items-center gap-2 border-t border-primary-100 pt-2">
+                                <span className="text-[10px] uppercase tracking-widest text-primary-500/60">
+                                  ↳ Liga ao produto:
+                                </span>
+                                <select
+                                  value={ing.productId ?? ''}
+                                  onChange={(e) =>
+                                    updateIngredient(m.id, idx, {
+                                      productId: e.target.value
+                                        ? Number(e.target.value)
+                                        : null,
+                                    })
+                                  }
+                                  className="flex-1 rounded-md border border-primary-200 bg-white px-2 py-1 text-xs"
+                                >
+                                  <option value="">— sem ligação (estoque não decrementa) —</option>
+                                  {(['massa', 'molho', 'cobertura', 'operacao'] as const).map(
+                                    (cat) => {
+                                      const items = products.filter(
+                                        (p) =>
+                                          p.category === cat ||
+                                          p.categories?.includes(cat),
+                                      );
+                                      if (items.length === 0) return null;
+                                      return (
+                                        <optgroup key={cat} label={CATEGORY_LABEL[cat]}>
+                                          {items.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                              {p.name}
+                                              {p.brand ? ` · ${p.brand}` : ''}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      );
+                                    },
+                                  )}
+                                </select>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+
+                    {usingRecipe && (
+                      <div className="mt-3 grid grid-cols-3 gap-2 rounded-md bg-white p-3 text-center">
+                        <Stat
+                          label="Custo real"
+                          value={`R$ ${recipeCost.toFixed(2)}`}
+                        />
+                        <Stat
+                          label="Lucro/un"
+                          value={`R$ ${(m.price - recipeCost).toFixed(2)}`}
+                          tone={
+                            m.price - recipeCost >= 0 ? 'good' : 'bad'
+                          }
+                        />
+                        <Stat
+                          label="Margem"
+                          value={`${calcMargin({ price: m.price, cost: recipeCost }).marginPct.toFixed(0)}%`}
+                          tone={
+                            margin.marginPct >= 50
+                              ? 'good'
+                              : margin.marginPct >= 30
+                                ? 'warn'
+                                : 'bad'
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {!usingRecipe && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      Sem ingredientes cadastrados. Usando <strong>custo
+                      manual de fallback</strong>:
+                      <NumField
+                        label="Custo manual R$"
+                        value={m.cost}
+                        onChange={(v) => update(m.id, { cost: v })}
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-primary-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await update(m.id, {
+                          name: m.name,
+                          description: m.description,
+                          price: m.price,
+                          cost: m.cost,
+                          active: m.active,
+                          category: m.category ?? null,
+                          ingredients: m.ingredients,
+                        });
+                        setExpanded(null);
+                      }}
+                      className="rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
+                    >
+                      ✓ Salvar e recolher
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(m.id, m.name)}
+                      className="rounded-full border border-rose-300 bg-rose-50 px-4 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                    >
+                      🗑 Excluir
+                    </button>
+                  </div>
+                </div>
+              )}
+            </article>
+                );
+              })
             )}
-          </div>
-        ))}
-      </div>
+          </section>
+        ));
+      })()}
+
+      {menu.length === 0 && (
+        <p className="rounded-xl border border-primary-100 bg-white p-8 text-center text-sm text-primary-500/60">
+          Nenhum sabor cadastrado. Clique em "+ Adicionar sabor".
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+        {label}
+      </span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+      />
+    </label>
+  );
+}
+
+function NumField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] uppercase tracking-widest text-primary-500/60">
+        {label}
+      </span>
+      <input
+        type="number"
+        min={0}
+        step="0.5"
+        value={value || ''}
+        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary-500"
+      />
+    </label>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'good' | 'warn' | 'bad';
+}) {
+  const cls =
+    tone === 'good'
+      ? 'text-emerald-700'
+      : tone === 'warn'
+        ? 'text-amber-700'
+        : tone === 'bad'
+          ? 'text-rose-700'
+          : 'text-primary-500';
+  return (
+    <div>
+      <p className="text-[9px] uppercase tracking-widest text-primary-500/50">
+        {label}
+      </p>
+      <p
+        className={`text-sm font-medium ${cls}`}
+        style={{ fontFamily: 'var(--font-cormorant), Georgia, serif' }}
+      >
+        {value}
+      </p>
     </div>
   );
 }
