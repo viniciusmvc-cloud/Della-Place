@@ -28,6 +28,7 @@ import {
 import {
   broadcastWhatsAppLink,
   buildBroadcastMessage,
+  DEFAULT_BROADCAST_TEMPLATE,
 } from '@/lib/whatsapp-broadcast';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -424,6 +425,8 @@ export default function DisponibilidadePage() {
   );
 }
 
+const BROADCAST_TEMPLATE_KEY = 'della-pace.broadcast.template.v1';
+
 function BroadcastSheet({
   availability,
   customers,
@@ -443,6 +446,83 @@ function BroadcastSheet({
     'idle' | 'sending' | 'sent' | 'error'
   >('idle');
   const [pushResult, setPushResult] = useState<string | null>(null);
+
+  // ─── Template editável + arte (imagem) ───────────────────────────────
+  const [template, setTemplate] = useState<string>(DEFAULT_BROADCAST_TEMPLATE);
+  const [templateLoaded, setTemplateLoaded] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [artImage, setArtImage] = useState<string | null>(null);
+  const [artCopyState, setArtCopyState] = useState<'idle' | 'copied' | 'error'>(
+    'idle',
+  );
+
+  // Carrega template salvo do localStorage (se houver)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem(BROADCAST_TEMPLATE_KEY);
+      if (saved) setTemplate(saved);
+    } catch {
+      // ignore
+    }
+    setTemplateLoaded(true);
+  }, []);
+
+  // Salva template no localStorage a cada mudança (debounced via useEffect)
+  useEffect(() => {
+    if (!templateLoaded || typeof window === 'undefined') return;
+    try {
+      if (template === DEFAULT_BROADCAST_TEMPLATE) {
+        localStorage.removeItem(BROADCAST_TEMPLATE_KEY);
+      } else {
+        localStorage.setItem(BROADCAST_TEMPLATE_KEY, template);
+      }
+    } catch {
+      // ignore
+    }
+  }, [template, templateLoaded]);
+
+  function restoreDefaultTemplate() {
+    if (!confirm('Restaurar a mensagem padrão? Vai perder as edições feitas.')) {
+      return;
+    }
+    setTemplate(DEFAULT_BROADCAST_TEMPLATE);
+  }
+
+  function handleArtUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Selecione um arquivo de imagem (PNG, JPG, etc).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Imagem muito grande. Máx 5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setArtImage(typeof reader.result === 'string' ? reader.result : null);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function copyArtToClipboard() {
+    if (!artImage) return;
+    try {
+      // Converte base64 → blob → ClipboardItem
+      const res = await fetch(artImage);
+      const blob = await res.blob();
+      await navigator.clipboard.write([
+        new ClipboardItem({ [blob.type]: blob }),
+      ]);
+      setArtCopyState('copied');
+      setTimeout(() => setArtCopyState('idle'), 2500);
+    } catch {
+      setArtCopyState('error');
+      setTimeout(() => setArtCopyState('idle'), 3500);
+    }
+  }
 
   useEffect(() => {
     const dateLabel = new Date(`${availability.date}T12:00:00`).toLocaleDateString(
@@ -492,6 +572,7 @@ function BroadcastSheet({
   );
 
   const dateLabel = formatDateBR(new Date(`${availability.date}T12:00:00`));
+  const isCustomTemplate = template !== DEFAULT_BROADCAST_TEMPLATE;
   const sampleMessage =
     sortable.length > 0
       ? buildBroadcastMessage({
@@ -501,6 +582,7 @@ function BroadcastSheet({
           menu,
           notes: availability.notes,
           forPreview: true,
+          customTemplate: isCustomTemplate ? template : undefined,
         })
       : null;
 
@@ -538,6 +620,7 @@ function BroadcastSheet({
         startHour: availability.startHour,
         menu,
         notes: availability.notes,
+        customTemplate: isCustomTemplate ? template : undefined,
       });
       window.open(link, '_blank', 'noopener,noreferrer');
       markSent(c.cpf);
@@ -641,16 +724,160 @@ function BroadcastSheet({
             </button>
           </div>
 
-          {sampleMessage && (
-            <details className="mb-4 rounded-lg border border-primary-100 bg-primary-50/30 p-3">
-              <summary className="cursor-pointer text-xs font-medium uppercase tracking-widest text-primary-500/70">
-                Pré-visualizar mensagem
-              </summary>
-              <pre className="mt-2 whitespace-pre-wrap rounded bg-white p-3 text-[11px] leading-relaxed text-primary-500">
+          {/* Editor de mensagem + arte */}
+          <section className="mb-4 rounded-lg border border-primary-100 bg-primary-50/30 p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-widest text-primary-500/70">
+                Mensagem do WhatsApp{' '}
+                {isCustomTemplate && (
+                  <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-800">
+                    EDITADA
+                  </span>
+                )}
+              </p>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowEditor((v) => !v)}
+                  className="rounded-full border border-primary-200 px-3 py-1 text-[11px] text-primary-500/80 hover:border-primary-500 hover:text-primary-500"
+                >
+                  {showEditor ? '👁 Ver preview' : '✏️ Editar mensagem'}
+                </button>
+                {isCustomTemplate && (
+                  <button
+                    type="button"
+                    onClick={restoreDefaultTemplate}
+                    className="rounded-full border border-rose-200 px-3 py-1 text-[11px] text-rose-700 hover:border-rose-500"
+                    title="Volta pro texto padrão"
+                  >
+                    ↺ Restaurar padrão
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {showEditor ? (
+              <div className="space-y-2">
+                <textarea
+                  value={template}
+                  onChange={(e) => setTemplate(e.target.value)}
+                  rows={14}
+                  className="w-full rounded-md border border-primary-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-primary-500 outline-none focus:border-primary-500"
+                />
+                <p className="text-[10px] text-primary-500/60">
+                  Variáveis disponíveis:{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{nome}'}
+                  </code>{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{data}'}
+                  </code>{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{dataShort}'}
+                  </code>{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{hora}'}
+                  </code>{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{sabores}'}
+                  </code>{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{site}'}
+                  </code>{' '}
+                  <code className="rounded bg-primary-100 px-1 py-0.5">
+                    {'{telefone}'}
+                  </code>
+                  . Suas edições ficam salvas no navegador (próxima abertura
+                  já carrega).
+                </p>
+              </div>
+            ) : sampleMessage ? (
+              <pre className="whitespace-pre-wrap rounded bg-white p-3 text-[11px] leading-relaxed text-primary-500">
                 {sampleMessage}
               </pre>
-            </details>
-          )}
+            ) : (
+              <p className="rounded bg-white p-3 text-[11px] text-primary-500/60">
+                Sem clientes com WhatsApp pra pré-visualizar.
+              </p>
+            )}
+          </section>
+
+          {/* Anexar arte (imagem) */}
+          <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50/30 p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-widest text-amber-800">
+                🎨 Arte do cardápio (opcional)
+              </p>
+              {artImage && (
+                <button
+                  type="button"
+                  onClick={() => setArtImage(null)}
+                  className="rounded-full border border-rose-200 px-3 py-1 text-[11px] text-rose-700 hover:border-rose-500"
+                >
+                  ✕ Remover
+                </button>
+              )}
+            </div>
+
+            {!artImage ? (
+              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed border-amber-300 bg-white px-4 py-3 text-[11px] text-amber-900 hover:border-amber-500">
+                <span className="text-lg">📎</span>
+                <span className="flex-1">
+                  Clique pra anexar uma imagem (PNG / JPG, máx 5 MB). Vai
+                  aparecer aqui pra você copiar e colar nas conversas do
+                  WhatsApp.
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleArtUpload}
+                  className="hidden"
+                />
+              </label>
+            ) : (
+              <div className="space-y-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={artImage}
+                  alt="Arte do cardápio"
+                  className="max-h-72 w-full rounded-md border border-amber-200 bg-white object-contain"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={copyArtToClipboard}
+                    className="rounded-full bg-amber-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
+                  >
+                    📋 Copiar imagem
+                  </button>
+                  <a
+                    href={artImage}
+                    download="cardapio-della-pace.png"
+                    className="rounded-full border border-amber-300 px-4 py-1.5 text-xs text-amber-800 hover:border-amber-500"
+                  >
+                    ⬇ Baixar imagem
+                  </a>
+                  {artCopyState === 'copied' && (
+                    <span className="text-[11px] text-emerald-700">
+                      ✓ Imagem copiada — cole (Ctrl/Cmd+V) na conversa do
+                      WhatsApp.
+                    </span>
+                  )}
+                  {artCopyState === 'error' && (
+                    <span className="text-[11px] text-rose-700">
+                      Navegador não suporta cópia. Use "Baixar imagem" e arraste
+                      no WhatsApp.
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-amber-900/70">
+                  Fluxo: clica em <strong>📋 Copiar imagem</strong>, depois clica
+                  no WhatsApp do cliente abaixo (texto vai pronto), e cole
+                  (Ctrl/Cmd+V) a imagem na conversa antes de enviar.
+                </p>
+              </div>
+            )}
+          </section>
 
           <input
             type="search"
@@ -674,6 +901,7 @@ function BroadcastSheet({
                   startHour: availability.startHour,
                   menu,
                   notes: availability.notes,
+                  customTemplate: isCustomTemplate ? template : undefined,
                 });
                 return (
                   <li
